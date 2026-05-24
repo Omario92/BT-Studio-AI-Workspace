@@ -14,7 +14,7 @@ import { ToolCategory } from '@prisma/client';
 export async function listTools(activeOnly = true) {
   return prisma.aITool.findMany({
     where: activeOnly ? { isActive: true } : undefined,
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    orderBy: { sortOrder: 'asc' },
   });
 }
 

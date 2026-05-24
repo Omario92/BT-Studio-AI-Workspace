@@ -64,6 +64,7 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   // Live recent jobs from API (falls back to RECENT_JOBS)
   const [recentJobs, setRecentJobs] = React.useState(RECENT_JOBS);
   const [activeProject, setActiveProject] = React.useState(null);
+  const [sortBy, setSortBy] = React.useState("most-used");
 
   React.useEffect(() => {
     const activeProjId = localStorage.getItem("bt_active_proj");
@@ -100,9 +101,23 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   }, []);
 
   // Pinned tab = filter to pinned tool ids
-  const visible = cat === "pinned"
+  const filtered = cat === "pinned"
     ? tools.filter(t => pinned.includes(t.id))
     : tools.filter(t => t.cat === cat);
+
+  const visible = React.useMemo(() => {
+    const list = [...filtered];
+    if (sortBy === "most-used") {
+      list.sort((a, b) => {
+        const orderA = a.sortOrder !== undefined ? a.sortOrder : (typeof TOOLS !== "undefined" ? TOOLS.findIndex(x => x.id === a.id) : 0);
+        const orderB = b.sortOrder !== undefined ? b.sortOrder : (typeof TOOLS !== "undefined" ? TOOLS.findIndex(x => x.id === b.id) : 0);
+        return orderA - orderB;
+      });
+    } else if (sortBy === "alpha") {
+      list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+    return list;
+  }, [filtered, sortBy]);
 
   const countByCat = React.useMemo(() => {
     const o = { pinned: pinned.length };
@@ -193,7 +208,24 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
           <span style={{flex: 1}} />
           <div style={{display:"flex", gap: 6, alignItems:"center", paddingRight: 4}}>
             <span style={{fontFamily:"var(--f-mono)", fontSize:11, color:"var(--ink-4)", letterSpacing:"0.06em"}}>SORT</span>
-            <div className="dropdown" style={{fontSize: 11.5}}>Most used {I.chevDown}</div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="dropdown"
+              style={{
+                fontSize: 11.5,
+                outline: "none",
+                appearance: "none",
+                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B909B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 8px center",
+                backgroundSize: "12px",
+                paddingRight: "24px"
+              }}
+            >
+              <option value="most-used" style={{background: "var(--bg-card)", color: "var(--ink)"}}>Most used</option>
+              <option value="alpha" style={{background: "var(--bg-card)", color: "var(--ink)"}}>A–Z</option>
+            </select>
           </div>
         </div>
 
