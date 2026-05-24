@@ -7,12 +7,87 @@ function ImageGenWorkbench({ tool, onBack }) {
   const [lock, setLock] = React.useState(true);
   const [active, setActive] = React.useState(0);
   const [prompt, setPrompt] = React.useState("Make the rain heavier, push the neon signs cooler, keep the character pose locked.");
+  const [promptText, setPromptText] = React.useState("Rainy cyberpunk street, low angle, cinematic mid-shot. Hero with leather jacket, soaked. Cool teal-magenta neon. Volumetric haze. Holds umbrella tilted.");
+
+  const [currentJob, setCurrentJob] = React.useState(null);
+  const [progress, setProgress] = React.useState(0);
+  const [generatedAsset, setGeneratedAsset] = React.useState(null);
+  
+  const pollTimerRef = React.useRef(null);
+
+  const startPolling = (jobId) => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(() => {
+      if (typeof jobsApi === "undefined") return;
+      jobsApi.getJob(jobId).then(job => {
+        setCurrentJob(job);
+        setProgress(job.progress || 0);
+        if (job.status === "COMPLETED") {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+          if (job.assets && job.assets.length > 0) {
+            setGeneratedAsset(job.assets[0]);
+          } else {
+            setGeneratedAsset({ name: "Generated_Output.png" });
+          }
+        } else if (job.status === "FAILED") {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+      }).catch(() => {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      });
+    }, 1500);
+  };
+
+  React.useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  const handleGenerate = () => {
+    const activeProjId = localStorage.getItem("bt_active_proj") || "proj_huda";
+    setProgress(0);
+    setCurrentJob({ status: "QUEUED", type: "IMAGE_GENERATION" });
+    
+    if (typeof jobsApi === "undefined") {
+      // Offline fallback
+      setTimeout(() => {
+        setProgress(50);
+        setCurrentJob({ status: "RUNNING", type: "IMAGE_GENERATION" });
+        setTimeout(() => {
+          setProgress(100);
+          setCurrentJob({ status: "COMPLETED", type: "IMAGE_GENERATION" });
+          setGeneratedAsset({ name: "Offline_Gen.png" });
+        }, 1500);
+      }, 1500);
+      return;
+    }
+
+    jobsApi.createJob({
+      name: `Frame_${Date.now().toString().slice(-4)}`,
+      type: "IMAGE_GENERATION",
+      projectId: activeProjId,
+      toolId: tool._dbId,
+      params: { prompt: promptText }
+    }).then(job => {
+      setCurrentJob(job);
+      startPolling(job.id);
+    }).catch(err => {
+      console.error(err);
+      setCurrentJob({ status: "FAILED", errorMsg: err.message || "Failed to start job" });
+    });
+  };
 
   const versions = [
     { v: "v3 (Current)", date: "2024-10-24 17:35:38", tone: "violet" },
     { v: "v2",           date: "2024-10-24 17:05:39", tone: "rose"   },
     { v: "v1",           date: "2024-10-24 17:25:20", tone: "blue"   },
   ];
+
+  const isGenerating = currentJob && (currentJob.status === "RUNNING" || currentJob.status === "QUEUED");
 
   return (
     <>
@@ -39,8 +114,9 @@ function ImageGenWorkbench({ tool, onBack }) {
             <div className="field">
               <label className="field__label" style={{color:"var(--ink-on-dark)"}}>Description prompt</label>
               <textarea className="textarea textarea--dark"
-                placeholder="A rainy cyberpunk street with neon billboards, low angle, cinematic depth, character mid-shot, holding umbrella…"
-                defaultValue="Rainy cyberpunk street, low angle, cinematic mid-shot. Hero with leather jacket, soaked. Cool teal-magenta neon. Volumetric haze. Holds umbrella tilted." />
+                value={promptText}
+                onChange={e => setPromptText(e.target.value)}
+                placeholder="A rainy cyberpunk street with neon billboards, low angle, cinematic depth, character mid-shot, holding umbrella…" />
             </div>
 
             <div className="field">
@@ -114,14 +190,45 @@ function ImageGenWorkbench({ tool, onBack }) {
         <section className="aiw__panel aiw__panel--canvas">
           <header className="aiw__panel-head">
             <span className="aiw__panel-title" style={{color:"var(--ink-2)"}}>Output Preview</span>
-            <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>v3 · APPROVED</span>
+            {isGenerating ? (
+              <span className="chip chip--generating"><span className="dot-status dot-status--generating"/>{currentJob.status} · {progress}%</span>
+            ) : currentJob?.status === "COMPLETED" ? (
+              <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>COMPLETED</span>
+            ) : currentJob?.status === "FAILED" ? (
+              <span className="chip chip--failed"><span className="dot-status dot-status--failed"/>FAILED</span>
+            ) : (
+              <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>v3 · APPROVED</span>
+            )}
             <span style={{flex:1}} />
             <span style={{fontFamily:"var(--f-mono)", fontSize:11, color:"var(--ink-4)"}}>RENDER · 12.4s · 1920×1080</span>
           </header>
 
           <div className="canvas-wrap">
             <div className="canvas-stage">
-              <Placeholder tone="violet" label="GENERATED OUTPUT · CYBERPUNK STREET" style={{position:"absolute", inset:0}} />
+              {isGenerating && (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(13,15,18,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, zIndex: 10, borderRadius: 0 }}>
+                  <div style={{ color: "#fff", fontWeight: 600, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="dot-status dot-status--generating" style={{ width: 10, height: 10, display: "inline-block" }} />
+                    {currentJob.status === "QUEUED" ? "In Queue..." : "Generating via GPU..."}
+                  </div>
+                  <div style={{ width: 220, height: 4, background: "var(--line-on-dark-2)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${progress}%`, height: "100%", background: "var(--accent)", transition: "width 200ms ease" }} />
+                  </div>
+                  <div style={{ color: "var(--ink-on-dark-3)", fontFamily: "var(--f-mono)", fontSize: 10.5 }}>
+                    PROGRESS · {progress}% · {currentJob.type}
+                  </div>
+                </div>
+              )}
+              {currentJob?.status === "COMPLETED" && generatedAsset ? (
+                <Placeholder tone="teal" label={`COMPLETED: ${generatedAsset.name}`} style={{position:"absolute", inset:0}} />
+              ) : currentJob?.status === "FAILED" ? (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(180,50,31,0.1)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <div style={{ color: "var(--st-failed)", fontWeight: 600 }}>Generation Failed</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{currentJob.errorMsg || "Provider timeout"}</div>
+                </div>
+              ) : (
+                <Placeholder tone="violet" label="GENERATED OUTPUT · CYBERPUNK STREET" style={{position:"absolute", inset:0}} />
+              )}
               <div className="canvas-sel"><i className="h1"/><i className="h2"/></div>
               <div style={{
                 position:"absolute", left:12, bottom:12, background:"rgba(0,0,0,0.6)",
@@ -148,7 +255,9 @@ function ImageGenWorkbench({ tool, onBack }) {
             <span className="spacer" />
             <button className="btn btn--secondary">{I.download}<span>Download</span></button>
             <button className="btn btn--secondary">{I.save}<span>Save version</span></button>
-            <button className="btn btn--primary">{I.spark}<span>Regenerate</span></button>
+            <button className="btn btn--primary" onClick={handleGenerate} disabled={isGenerating}>
+              {isGenerating ? "Generating..." : <><span style={{display:"inline-flex",marginRight:4}}>{I.spark}</span><span>Regenerate</span></>}
+            </button>
           </div>
         </section>
 

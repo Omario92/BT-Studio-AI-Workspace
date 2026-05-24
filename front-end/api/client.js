@@ -18,6 +18,7 @@ const API_BASE = (typeof window !== 'undefined' && window.__BT_API_BASE__)
 // ─── Token helpers ───────────────────────────
 
 const TOKEN_KEY = 'bt_token';
+const REFRESH_KEY = 'bt_refresh_token';
 
 const auth = {
   getToken() {
@@ -29,6 +30,46 @@ const auth = {
   clearToken() {
     try { localStorage.removeItem(TOKEN_KEY); } catch {}
   },
+  getRefreshToken() {
+    try { return localStorage.getItem(REFRESH_KEY); } catch { return null; }
+  },
+  setRefreshToken(token) {
+    try { localStorage.setItem(REFRESH_KEY, token); } catch {}
+  },
+  clearRefreshToken() {
+    try { localStorage.removeItem(REFRESH_KEY); } catch {}
+  },
+  async login(email, password) {
+    const { data } = await apiClient.post('/api/auth/login', { email, password });
+    if (data.accessToken) {
+      auth.setToken(data.accessToken);
+    }
+    if (data.refreshToken) {
+      auth.setRefreshToken(data.refreshToken);
+    }
+    return data;
+  },
+  async getMe() {
+    try {
+      const { data } = await apiClient.get('/api/auth/me');
+      return data.user;
+    } catch (err) {
+      if (err.offline) {
+        return {
+          id: 'usr_alice',
+          name: 'Alice Chen',
+          email: 'alice@btstudio.ai',
+          role: 'ADMIN',
+          avatarUrl: null,
+        };
+      }
+      throw err;
+    }
+  },
+  async logout() {
+    auth.clearToken();
+    auth.clearRefreshToken();
+  }
 };
 
 // ─── Core fetch wrapper ──────────────────────

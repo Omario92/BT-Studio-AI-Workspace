@@ -1,7 +1,27 @@
 function Login({ onLogin }) {
-  const [email, setEmail] = React.useState("a.chen@btstudio.io");
-  const [pwd, setPwd]   = React.useState("••••••••••");
+  const [email, setEmail] = React.useState("alice@btstudio.ai");
+  const [pwd, setPwd]   = React.useState("password123");
   const [remember, setRemember] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
+  const [errorMsg, setErrorMsg] = React.useState("");
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!email || !pwd) {
+      setErrorMsg("Please enter both email and password.");
+      return;
+    }
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const data = await apiClient.auth.login(email, pwd);
+      onLogin(data.user);
+    } catch (err) {
+      setErrorMsg(err.message || "Invalid credentials. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="login">
@@ -40,13 +60,19 @@ function Login({ onLogin }) {
 
       {/* Right — form */}
       <div className="login__form-wrap">
-        <div className="login__form">
+        <form className="login__form" onSubmit={handleSubmit}>
           <h2>Sign in to your workspace</h2>
           <p className="muted">Use your studio SSO credentials.</p>
 
+          {errorMsg && (
+            <div style={{ background: "var(--st-failed-bg)", color: "var(--st-failed)", padding: "10px 12px", borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+              {errorMsg}
+            </div>
+          )}
+
           <div className="field">
             <label className="field__label">Work email</label>
-            <input className="input" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@btstudio.io" />
+            <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@btstudio.io" required />
           </div>
 
           <div className="field">
@@ -54,11 +80,12 @@ function Login({ onLogin }) {
               Password
               <span className="field__hint" style={{marginLeft: "auto"}}>SSO · OKTA</span>
             </label>
-            <input className="input" type="password" value={pwd} onChange={e => setPwd(e.target.value)} />
+            <input className="input" type="password" value={pwd} onChange={e => setPwd(e.target.value)} required />
           </div>
 
           <div className="login__remember">
             <button
+              type="button"
               className={`checkbox ${remember ? "checkbox--on" : ""}`}
               onClick={() => setRemember(r => !r)}
             >
@@ -68,22 +95,22 @@ function Login({ onLogin }) {
             <a className="link-blue">Forgot password?</a>
           </div>
 
-          <button className="btn btn--primary btn--lg btn--full" onClick={onLogin}>
-            Sign in to studio
+          <button className="btn btn--primary btn--lg btn--full" type="submit" disabled={loading}>
+            {loading ? "Signing in..." : "Sign in to studio"}
             <span style={{display:"inline-flex"}}>{I.arrowRight}</span>
           </button>
 
           <div className="divider-or">or</div>
 
-          <button className="btn btn--secondary btn--full" onClick={onLogin}>
+          <button className="btn btn--secondary btn--full" type="button" onClick={handleSubmit} disabled={loading}>
             <span style={{display:"inline-flex"}}>{I.lock}</span>
-            Continue with Studio SSO
+            {loading ? "Authenticating..." : "Continue with Studio SSO"}
           </button>
 
           <div className="login__footer">
             BT Studio · Internal Use Only · Build 4.2.1
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

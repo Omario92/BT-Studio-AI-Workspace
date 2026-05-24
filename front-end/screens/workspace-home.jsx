@@ -63,6 +63,16 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   const [tools, setTools] = React.useState(typeof TOOLS !== "undefined" ? TOOLS : []);
   // Live recent jobs from API (falls back to RECENT_JOBS)
   const [recentJobs, setRecentJobs] = React.useState(RECENT_JOBS);
+  const [activeProject, setActiveProject] = React.useState(null);
+
+  React.useEffect(() => {
+    const activeProjId = localStorage.getItem("bt_active_proj");
+    if (activeProjId && typeof projectsApi !== "undefined") {
+      projectsApi.getProject(activeProjId).then(({ data }) => {
+        setActiveProject(data);
+      }).catch(() => {});
+    }
+  }, []);
 
   React.useEffect(() => {
     try { localStorage.setItem("bt_rail", railCollapsed ? "1" : "0"); } catch (e) {}
@@ -216,8 +226,8 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
           <div className="ctx-card">
             <div className="ctx-row">
               <span className="ctx-row__k">Project</span>
-              <span className="ctx-row__v">Huda Commercial</span>
-              <span className="ctx-row__edit">change</span>
+              <span className="ctx-row__v">{activeProject?.name ?? "Huda Commercial"}</span>
+              <span className="ctx-row__edit" onClick={() => onSwitchScreen && onSwitchScreen("projects")} style={{cursor:"pointer"}}>change</span>
             </div>
             <div className="ctx-row">
               <span className="ctx-row__k">Folder</span>
@@ -231,10 +241,10 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
               <span className="ctx-row__k">IP Lock</span>
               <span className="ctx-row__v" style={{display:"flex", alignItems:"center", gap:6}}>
                 <span style={{display:"inline-flex", color:"var(--accent)"}}>{I.lock}</span>
-                IP1 · Huda Brand
+                IP1 · {activeProject?.tone ? (activeProject.tone.toUpperCase() + " Brand") : "Huda Brand"}
               </span>
             </div>
-            <button className="ctx-card__switch">Switch active project</button>
+            <button className="ctx-card__switch" onClick={() => onSwitchScreen && onSwitchScreen("projects")}>Switch active project</button>
           </div>
         </div>
 

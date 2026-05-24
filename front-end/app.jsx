@@ -9,6 +9,29 @@ function App() {
   const [theme, setTheme] = React.useState(() => {
     try { return localStorage.getItem("bt_theme") || "light"; } catch (e) { return "light"; }
   });
+  const [currentUser, setCurrentUser] = React.useState(null);
+  const [loadingProfile, setLoadingProfile] = React.useState(true);
+
+  React.useEffect(() => {
+    const token = apiClient.auth.getToken();
+    if (!token) {
+      setScreen("login");
+      setLoadingProfile(false);
+      return;
+    }
+    apiClient.auth.getMe()
+      .then(user => {
+        setCurrentUser(user);
+        if (screen === "login") setScreen("dashboard");
+      })
+      .catch(() => {
+        apiClient.auth.logout();
+        setScreen("login");
+      })
+      .finally(() => {
+        setLoadingProfile(false);
+      });
+  }, []);
 
   React.useEffect(() => {
     try { localStorage.setItem("bt_theme", theme); } catch (e) {}
@@ -21,10 +44,34 @@ function App() {
     try { localStorage.setItem("bt_screen", screen); } catch (e) {}
   }, [screen]);
 
-  const onChange = (id) => setScreen(id);
+  const onChange = (id) => {
+    if (id === "login") {
+      apiClient.auth.logout();
+      setCurrentUser(null);
+    }
+    setScreen(id);
+  };
+
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    setScreen("dashboard");
+  };
+
+  if (loadingProfile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg-canvas)", color: "var(--ink)" }}>
+        <div style={{ fontSize: 18, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="dot-status dot-status--generating" style={{ width: 12, height: 12, display: "inline-block" }} />
+          Loading BT Studio Workspace...
+        </div>
+      </div>
+    );
+  }
 
   // Login is its own full-bleed view
-  if (screen === "login") return <Login onLogin={() => setScreen("dashboard")} />;
+  if (screen === "login" || !currentUser) {
+    return <Login onLogin={handleLoginSuccess} />;
+  }
 
   const crumbsMap = {
     dashboard:  ["BT Studio", "Dashboard"],
