@@ -40,7 +40,7 @@ export async function createTool(data: {
 }) {
   const existing = await prisma.aITool.findUnique({ where: { slug: data.slug } });
   if (existing) throw Errors.Conflict(`A tool with slug "${data.slug}" already exists`);
-  return prisma.aITool.create({ data });
+  return prisma.aITool.create({ data: { ...data, config: data.config as any } });
 }
 
 export async function updateTool(id: string, data: Partial<{
@@ -52,7 +52,7 @@ export async function updateTool(id: string, data: Partial<{
   config: Record<string, unknown>;
 }>) {
   await getTool(id);
-  return prisma.aITool.update({ where: { id }, data });
+  return prisma.aITool.update({ where: { id }, data: { ...data, config: data.config as any } });
 }
 
 export async function deleteTool(id: string) {

@@ -78,7 +78,7 @@ async function handleImageGeneration(
       projectId: job.projectId,
       creatorId: job.userId,
       jobId: job.id,
-      metadata: params,
+      metadata: params as any,
     },
   });
 
@@ -116,7 +116,7 @@ async function handleStyleTransfer(
       projectId: job.projectId,
       creatorId: job.userId,
       jobId: job.id,
-      metadata: params,
+      metadata: params as any,
     },
   });
   onProgress(100);
@@ -171,7 +171,7 @@ async function handleCharacterConsistency(
       projectId: job.projectId,
       creatorId: job.userId,
       jobId: job.id,
-      metadata: params,
+      metadata: params as any,
     },
   });
   onProgress(100);
@@ -195,7 +195,7 @@ async function handleUpscale(
       projectId: job.projectId,
       creatorId: job.userId,
       jobId: job.id,
-      metadata: params,
+      metadata: params as any,
     },
   });
   onProgress(100);

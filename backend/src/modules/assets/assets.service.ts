@@ -72,6 +72,7 @@ export async function createAsset(data: CreateAssetInput, creatorId: string) {
   return prisma.asset.create({
     data: {
       ...data,
+      metadata: data.metadata as any,
       creatorId,
       status: AssetStatus.DRAFT,
       version: 1,

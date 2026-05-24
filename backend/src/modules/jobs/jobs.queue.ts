@@ -1,7 +1,7 @@
 import { Queue, Worker, QueueEvents } from 'bullmq';
 import { redis } from '../../config/redis';
 import prisma from '../../config/database';
-import { JobStatus, JobType } from '@prisma/client';
+import { Prisma, JobStatus, JobType } from '@prisma/client';
 import { processAIJob } from './jobs.processor';
 import logger from '../../utils/logger';
 
@@ -47,7 +47,7 @@ export const jobWorker = new Worker(
         data: {
           status: JobStatus.COMPLETED,
           progress: 100,
-          result,
+          result: result as Prisma.InputJsonValue,
           completedAt: new Date(),
         },
       });

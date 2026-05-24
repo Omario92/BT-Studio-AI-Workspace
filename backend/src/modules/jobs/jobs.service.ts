@@ -1,6 +1,6 @@
 import prisma from '../../config/database';
 import { Errors } from '../../utils/errors';
-import { JobStatus, JobType } from '@prisma/client';
+import { Prisma, JobStatus, JobType } from '@prisma/client';
 import { enqueueJob, cancelQueueJob } from './jobs.queue';
 
 export interface CreateJobInput {
@@ -15,6 +15,7 @@ export async function createJob(input: CreateJobInput, userId: string) {
   const job = await prisma.batchJob.create({
     data: {
       ...input,
+      params: input.params as Prisma.InputJsonValue,
       userId,
       status: JobStatus.PENDING,
     },
@@ -71,7 +72,7 @@ export async function cancelJob(id: string, userId: string) {
   const job = await prisma.batchJob.findUnique({ where: { id } });
   if (!job) throw Errors.NotFound('Job not found');
   if (job.userId !== userId) throw Errors.Forbidden('Access denied');
-  if (![JobStatus.PENDING, JobStatus.RUNNING].includes(job.status)) {
+  if (!([JobStatus.PENDING, JobStatus.RUNNING] as JobStatus[]).includes(job.status)) {
     throw Errors.BadRequest('Only PENDING or RUNNING jobs can be cancelled');
   }
 
