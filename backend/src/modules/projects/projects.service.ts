@@ -136,13 +136,13 @@ export async function getProjectActivity(projectId: string, userId: string, limi
 
 // ─── Helpers ─────────────────────────────────
 
-async function assertProjectAccess(projectId: string, userId: string) {
+export async function assertProjectAccess(projectId: string, userId: string) {
   const project = await prisma.project.findFirst({
     where: {
       id: projectId,
       OR: [{ ownerId: userId }, { members: { some: { userId } } }],
     },
   });
-  if (!project) throw Errors.NotFound('Project not found');
+  if (!project) throw Errors.NotFound('Project not found or access denied');
   return project;
 }

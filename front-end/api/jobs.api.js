@@ -54,5 +54,59 @@ async function retryJob(id) {
   return data.job;
 }
 
-const jobsApi = { listJobs, getJob, createJob, cancelJob, retryJob };
+async function createBatch({ projectId, toolId, inputs }) {
+  try {
+    const { data } = await apiClient.post('/api/jobs/batches', { projectId, toolId, inputs });
+    return { data, fromCache: false };
+  } catch (err) {
+    if (err.offline) {
+      const batchId = `mock_batch_${Date.now()}`;
+      return { data: { batchId, totalJobs: inputs.length, mock: true }, fromCache: true };
+    }
+    throw err;
+  }
+}
+
+async function getBatchStatus(batchId) {
+  try {
+    const { data } = await apiClient.get(`/api/jobs/batches/${batchId}`);
+    return { data, fromCache: false };
+  } catch (err) {
+    if (err.offline) {
+      return {
+        data: {
+          batchId,
+          total: 30,
+          completed: 22,
+          failed: 4,
+          running: 4,
+          jobs: Array.from({ length: 30 }, (_, i) => ({
+            id: `mock_job_${i}`,
+            name: `Mock Batch Frame ${i}`,
+            status: i < 22 ? 'COMPLETED' : i < 26 ? 'RUNNING' : 'FAILED',
+            progress: i < 22 ? 100 : i < 26 ? 64 : 0,
+            assets: i < 22 ? [{ id: `ast_${i}`, fileUrl: '' }] : [],
+          })),
+        },
+        fromCache: true,
+      };
+    }
+    throw err;
+  }
+}
+
+async function retryBatch(batchId) {
+  const { data } = await apiClient.post(`/api/jobs/batches/${batchId}/retry-failed`);
+  return data;
+}
+
+async function cancelBatch(batchId) {
+  const { data } = await apiClient.post(`/api/jobs/batches/${batchId}/cancel`);
+  return data;
+}
+
+const jobsApi = { 
+  listJobs, getJob, createJob, cancelJob, retryJob,
+  createBatch, getBatchStatus, retryBatch, cancelBatch 
+};
 window.jobsApi = jobsApi;

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { JobType } from '@prisma/client';
-import { createJob, getJob, listJobs, cancelJob, retryJob, getQueueStats, createBatch, getBatchStatus } from './jobs.service';
+import { createJob, getJob, listJobs, cancelJob, retryJob, getQueueStats, createBatch, getBatchStatus, retryFailedBatch, cancelBatch } from './jobs.service';
 
 export async function jobRoutes(fastify: FastifyInstance) {
   const auth = { onRequest: [fastify.authenticate] };
@@ -136,6 +136,34 @@ export async function jobRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { batchId } = req.params as { batchId: string };
     const batchStatus = await getBatchStatus(batchId);
+    return reply.send(batchStatus);
+  });
+
+  // POST /api/jobs/batches/:batchId/retry-failed
+  fastify.post('/batches/:batchId/retry-failed', {
+    ...auth,
+    schema: {
+      tags: ['Jobs'],
+      summary: 'Retry all failed jobs in a batch run',
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { batchId } = req.params as { batchId: string };
+    const batchStatus = await retryFailedBatch(batchId, userId);
+    return reply.send(batchStatus);
+  });
+
+  // POST /api/jobs/batches/:batchId/cancel
+  fastify.post('/batches/:batchId/cancel', {
+    ...auth,
+    schema: {
+      tags: ['Jobs'],
+      summary: 'Cancel all queued or running jobs in a batch run',
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { batchId } = req.params as { batchId: string };
+    const batchStatus = await cancelBatch(batchId, userId);
     return reply.send(batchStatus);
   });
 }

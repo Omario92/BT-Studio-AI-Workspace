@@ -85,10 +85,13 @@ export async function buildApp() {
 async function start() {
   const app = await buildApp();
 
+  let jobWorker: any = null;
+
   // Start BullMQ worker if Redis is enabled
   if (process.env.DISABLE_REDIS !== 'true') {
-    const { jobWorker } = await import('./modules/jobs/jobs.queue');
-    jobWorker.on('error', (err) => logger.error({ err }, 'Worker error'));
+    const queueModule = await import('./modules/jobs/jobs.queue');
+    jobWorker = queueModule.jobWorker;
+    jobWorker.on('error', (err: Error) => logger.error({ err }, 'Worker error'));
   } else {
     logger.info('BullMQ queue worker is disabled via DISABLE_REDIS env');
   }
@@ -105,7 +108,9 @@ async function start() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down…`);
-    await jobWorker.close();
+    if (jobWorker) {
+      await jobWorker.close();
+    }
     await app.close();
     process.exit(0);
   };

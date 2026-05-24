@@ -152,6 +152,9 @@ export async function retryJob(id: string, userId: string) {
 
 export async function getQueueStats() {
   const { jobQueue } = await import('./jobs.queue');
+  if (!jobQueue) {
+    return { waiting: 0, active: 0, completed: 0, failed: 0 };
+  }
   const [waiting, active, completed, failed] = await Promise.all([
     jobQueue.getWaitingCount(),
     jobQueue.getActiveCount(),
@@ -231,4 +234,57 @@ export async function getBatchStatus(batchId: string) {
     running,
     jobs,
   };
+}
+
+export async function retryFailedBatch(batchId: string, userId: string) {
+  const jobs = await prisma.aIJob.findMany({
+    where: {
+      userId,
+      status: JobStatus.FAILED,
+      params: {
+        path: ['batchId'],
+        equals: batchId,
+      },
+    },
+  });
+
+  for (const job of jobs) {
+    await prisma.aIJob.update({
+      where: { id: job.id },
+      data: { status: JobStatus.QUEUED, errorMsg: null, startedAt: null, completedAt: null },
+    });
+
+    const queueJobId = await enqueueJob(job.id, job.type);
+    await prisma.aIJob.update({ where: { id: job.id }, data: { queueJobId } });
+  }
+
+  return getBatchStatus(batchId);
+}
+
+export async function cancelBatch(batchId: string, userId: string) {
+  const jobs = await prisma.aIJob.findMany({
+    where: {
+      userId,
+      status: {
+        in: [JobStatus.QUEUED, JobStatus.RUNNING],
+      },
+      params: {
+        path: ['batchId'],
+        equals: batchId,
+      },
+    },
+  });
+
+  for (const job of jobs) {
+    if (job.queueJobId) {
+      await cancelQueueJob(job.queueJobId).catch(() => {});
+    }
+
+    await prisma.aIJob.update({
+      where: { id: job.id },
+      data: { status: JobStatus.CANCELLED, completedAt: new Date() },
+    });
+  }
+
+  return getBatchStatus(batchId);
 }

@@ -47,11 +47,11 @@ Ensure the following variables are declared within the Railway Service Environme
 | **Database** | `DATABASE_URL` | Deployed PostgreSQL database URL. | `postgresql://...` |
 | **Queue** | `REDIS_URL` | Deployed Redis container connection. | `redis://...` |
 | **Storage** | `STORAGE_DRIVER` | Active driver mode (`s3` or `local`). | `s3` |
-| **S3 / R2** | `AWS_ACCESS_KEY_ID` | Access key for Cloudflare R2 / AWS S3. | `access_key_123` |
-| | `AWS_SECRET_ACCESS_KEY` | Secret access key. | `secret_key_abc` |
-| | `S3_BUCKET_NAME` | Primary hot storage bucket name. | `bt-studio-assets` |
-| | `S3_ENDPOINT` | Direct S3 endpoint (required for R2). | `https://<id>.r2.cloudflarestorage.com` |
-| | `AWS_REGION` | S3 Region target. | `auto` / `us-east-1` |
+| **S3 / R2** | `STORAGE_ACCESS_KEY_ID` | Access key for Cloudflare R2 / AWS S3. | `access_key_123` |
+| | `STORAGE_SECRET_ACCESS_KEY` | Secret access key. | `secret_key_abc` |
+| | `STORAGE_BUCKET` | Primary hot storage bucket name. | `bt-studio-assets` |
+| | `STORAGE_ENDPOINT` | Direct S3 endpoint (required for R2). | `https://<id>.r2.cloudflarestorage.com` |
+| | `STORAGE_REGION` | S3 Region target. | `auto` / `us-east-1` |
 | **GDrive Archive** | `GDRIVE_CLIENT_EMAIL` | Service Account email for backups. | `backups@gdrive.iam.gserviceaccount.com` |
 | | `GDRIVE_PRIVATE_KEY` | PEM private key for Google Auth. | `-----BEGIN PRIVATE KEY-----\nMII...` |
 | | `GDRIVE_SHARED_DRIVE_ID` | Optional Shared Drive ID layout. | `drive_id_9988` |

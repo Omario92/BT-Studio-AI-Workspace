@@ -66,6 +66,11 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   const [activeProject, setActiveProject] = React.useState(null);
   const [sortBy, setSortBy] = React.useState("most-used");
 
+  const [loadingTools, setLoadingTools] = React.useState(false);
+  const [loadingJobs, setLoadingJobs] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [offline, setOffline] = React.useState(false);
+
   React.useEffect(() => {
     const activeProjId = localStorage.getItem("bt_active_proj");
     if (activeProjId && typeof projectsApi !== "undefined") {
@@ -81,7 +86,9 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
 
   React.useEffect(() => {
     if (typeof toolsApi === "undefined") return;
-    toolsApi.listTools().then(({ data }) => {
+    setLoadingTools(true);
+    toolsApi.listTools().then(({ data, fromCache }) => {
+      setOffline(prev => prev || fromCache);
       if (data && data.length) {
         // Re-attach icon objects from the static I map (API returns icon key only)
         const withIcons = data.map(t => ({
@@ -90,15 +97,28 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
         }));
         setTools(withIcons);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error(err);
+      setOffline(true);
+    }).finally(() => {
+      setLoadingTools(false);
+    });
   }, []);
 
   React.useEffect(() => {
     if (typeof jobsApi === "undefined") return;
-    jobsApi.listJobs({ limit: 5 }).then(({ data }) => {
+    setLoadingJobs(true);
+    jobsApi.listJobs({ projectId: activeProject?.id, limit: 5 }).then(({ data, fromCache }) => {
+      setOffline(prev => prev || fromCache);
       if (data && data.length) setRecentJobs(data);
-    }).catch(() => {});
-  }, []);
+    }).catch((err) => {
+      console.error(err);
+      setError(err.message || "Failed to load jobs");
+      setOffline(true);
+    }).finally(() => {
+      setLoadingJobs(false);
+    });
+  }, [activeProject]);
 
   // Pinned tab = filter to pinned tool ids
   const filtered = cat === "pinned"
@@ -139,6 +159,16 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
       </button>
 
       <div className="toolhub__main">
+        {offline && (
+          <div style={{ background: "var(--amber, #f59e0b)", color: "#000", padding: "6px 12px", borderRadius: 6, fontSize: 12, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚡</span> Showing mock data — backend offline
+          </div>
+        )}
+        {error && (
+          <div style={{ background: "var(--st-failed-tint, #fee2e2)", color: "var(--st-failed, #ef4444)", padding: "6px 12px", borderRadius: 6, fontSize: 12, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚠️</span> {error}
+          </div>
+        )}
         {/* Header */}
         <div className="hub-head">
           <div>

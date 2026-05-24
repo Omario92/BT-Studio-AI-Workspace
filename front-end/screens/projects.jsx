@@ -353,7 +353,11 @@ function ProjectMgmt() {
               return (
                 <div className="asset-card" key={a.id || i}>
                   <div className="asset-card__thumb">
-                    <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />
+                    {a.fileUrl ? (
+                      <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />
+                    )}
                   </div>
                   <div className="asset-card__body">
                     <div className="asset-card__title-row">
@@ -411,7 +415,11 @@ function AssetList({ assets }) {
         return (
           <div className="asset-table__row" key={a.id || i}>
             <div className="asset-table__thumb">
-              <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
+              {a.fileUrl ? (
+                <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
+              )}
             </div>
             <div style={{display:"flex", flexDirection:"column", gap: 2, minWidth: 0}}>
               <span className="asset-table__name" title={a.name}>{a.name}</span>
@@ -462,7 +470,11 @@ function AssetCompare({ assets }) {
           <span className={cls}>{label}</span>
         </div>
         <div className="asset-compare__art">
-          <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />
+          {asset.fileUrl ? (
+            <img src={asset.fileUrl} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          ) : (
+            <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />
+          )}
         </div>
         <dl className="asset-compare__meta">
           <dt>Resolution</dt><dd>{RES[idx % RES.length]}</dd>
