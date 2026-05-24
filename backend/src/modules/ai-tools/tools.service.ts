@@ -9,6 +9,7 @@
 import prisma from '../../config/database';
 import { Errors } from '../../utils/errors';
 import { env } from '../../config/env';
+import { ToolCategory } from '@prisma/client';
 
 export async function listTools(activeOnly = true) {
   return prisma.aITool.findMany({
@@ -33,7 +34,7 @@ export async function createTool(data: {
   name: string;
   slug: string;
   description?: string;
-  category?: string;
+  category?: ToolCategory;
   provider?: string;
   modelId?: string;
   config?: Record<string, unknown>;
@@ -46,7 +47,7 @@ export async function createTool(data: {
 export async function updateTool(id: string, data: Partial<{
   name: string;
   description: string;
-  category: string;
+  category: ToolCategory;
   modelId: string;
   isActive: boolean;
   config: Record<string, unknown>;
