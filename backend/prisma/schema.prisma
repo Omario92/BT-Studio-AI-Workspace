@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────
 //  BT Studio AI Workspace — Prisma Schema
+//  Production model — all enums and relations
 // ─────────────────────────────────────────────
 
 generator client {
@@ -16,26 +17,35 @@ datasource db {
 
 enum Role {
   ADMIN
+  PRODUCER
   ARTIST
+  ART_DIRECTOR
+  AI_ENGINEER
   REVIEWER
+  VIEWER
 }
 
 enum ProjectStatus {
   ACTIVE
-  ARCHIVED
+  WIP
   COMPLETED
+  ARCHIVED
 }
 
 enum AssetStatus {
   DRAFT
   WIP
+  IN_REVIEW
+  REVISION_REQUESTED
   APPROVED
-  FAILED
+  REJECTED
   GENERATING
+  FAILED
+  ARCHIVED
 }
 
 enum JobStatus {
-  PENDING
+  QUEUED
   RUNNING
   COMPLETED
   FAILED
@@ -44,11 +54,29 @@ enum JobStatus {
 
 enum JobType {
   IMAGE_GENERATION
-  STYLE_TRANSFER
-  BATCH_RENDER
-  CHARACTER_CONSISTENCY
-  UPSCALE
+  IMAGE_UPSCALE
+  IMAGE_EDIT
+  VARIATION
+  REMOVE_BACKGROUND
+  RELIGHT
+  VIDEO_GENERATION
+  VOICE_GENERATION
+  BATCH_GENERATION
   CUSTOM
+}
+
+enum ToolCategory {
+  IMAGE
+  VIDEO
+  AUDIO
+  SPACES
+  THREE_D
+}
+
+enum ReviewDecision {
+  APPROVED
+  REJECTED
+  REVISION_REQUESTED
 }
 
 // ─── User ─────────────────────────────────────
@@ -64,14 +92,14 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  // Relations
   ownedProjects  Project[]        @relation("ProjectOwner")
   projectMembers ProjectMember[]
   assets         Asset[]          @relation("AssetCreator")
-  batchJobs      BatchJob[]
+  jobs           AIJob[]
   comments       Comment[]
   assignments    Assignment[]
   activityLogs   ActivityLog[]
+  reviews        Review[]
 
   @@map("users")
 }
@@ -84,20 +112,19 @@ model Project {
   client      String
   description String?
   status      ProjectStatus @default(ACTIVE)
-  progress    Int           @default(0) // 0-100
-  tone        String?       // UI color hint: rose, amber, teal, etc.
+  progress    Int           @default(0)
+  tone        String?
   isPinned    Boolean       @default(false)
   ownerId     String
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  // Relations
-  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
-  members     ProjectMember[]
-  folders     Folder[]
-  assets      Asset[]
-  batchJobs   BatchJob[]
-  assignments Assignment[]
+  owner        User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members      ProjectMember[]
+  folders      Folder[]
+  assets       Asset[]
+  jobs         AIJob[]
+  assignments  Assignment[]
   activityLogs ActivityLog[]
 
   @@map("projects")
@@ -139,78 +166,149 @@ model Folder {
 // ─── Asset ────────────────────────────────────
 
 model Asset {
-  id          String      @id @default(cuid())
-  name        String
-  fileUrl     String?
-  mimeType    String?
-  fileSizeBytes Int?
-  status      AssetStatus @default(DRAFT)
-  version     Int         @default(1)
-  projectId   String
-  folderId    String?
-  creatorId   String
-  jobId       String?     // if AI-generated, link to the BatchJob
-  metadata    Json?       // flexible AI generation params
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id             String      @id @default(cuid())
+  name           String
+  fileUrl        String?
+  mimeType       String?
+  fileSizeBytes  Int?
+  status         AssetStatus @default(DRAFT)
+  currentVersion Int         @default(1)
+  projectId      String
+  folderId       String?
+  creatorId      String
+  jobId          String?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  folder      Folder?     @relation(fields: [folderId], references: [id])
-  creator     User        @relation("AssetCreator", fields: [creatorId], references: [id])
-  job         BatchJob?   @relation(fields: [jobId], references: [id])
-  comments    Comment[]
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder       Folder?        @relation(fields: [folderId], references: [id])
+  creator      User           @relation("AssetCreator", fields: [creatorId], references: [id])
+  job          AIJob?         @relation(fields: [jobId], references: [id])
+  versions     AssetVersion[]
+  comments     Comment[]
   activityLogs ActivityLog[]
 
   @@map("assets")
 }
 
-// ─── Batch Job ────────────────────────────────
+// ─── Asset Version ────────────────────────────
+// Every generation / edit / upscale output creates a new AssetVersion.
+// Never overwrites the Asset or a prior version.
 
-model BatchJob {
+model AssetVersion {
+  id            String      @id @default(cuid())
+  assetId       String
+  versionNumber Int
+  fileUrl       String?
+  mimeType      String?
+  fileSizeBytes Int?
+  status        AssetStatus @default(DRAFT)
+  jobId         String?
+  params        Json?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime    @default(now())
+
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  job     AIJob?  @relation(fields: [jobId], references: [id])
+  reviews Review[]
+
+  @@unique([assetId, versionNumber])
+  @@map("asset_versions")
+}
+
+// ─── Review ───────────────────────────────────
+// Business rules (enforced in service layer):
+//   REJECTED             → comment is required
+//   REVISION_REQUESTED   → comment is required
+//   APPROVED             → comment is optional
+// Every review action creates an ActivityLog entry.
+
+model Review {
+  id         String         @id @default(cuid())
+  versionId  String
+  reviewerId String
+  decision   ReviewDecision
+  comment    String?
+  createdAt  DateTime       @default(now())
+
+  version  AssetVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  reviewer User         @relation(fields: [reviewerId], references: [id])
+
+  @@map("reviews")
+}
+
+// ─── AI Job ───────────────────────────────────
+
+model AIJob {
   id          String    @id @default(cuid())
   name        String?
   type        JobType
-  status      JobStatus @default(PENDING)
-  progress    Int       @default(0) // 0-100
-  queueJobId  String?   // BullMQ job ID
+  status      JobStatus @default(QUEUED)
+  progress    Int       @default(0)
+  queueJobId  String?
   projectId   String
   userId      String
   toolId      String?
-  params      Json      // generation parameters
-  result      Json?     // output metadata / URLs
+  params      Json
+  result      Json?
   errorMsg    String?
   startedAt   DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id])
-  tool        AITool?   @relation(fields: [toolId], references: [id])
-  assets      Asset[]
-  activityLogs ActivityLog[]
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id])
+  tool          AITool?        @relation(fields: [toolId], references: [id])
+  assets        Asset[]
+  assetVersions AssetVersion[]
+  activityLogs  ActivityLog[]
 
-  @@map("batch_jobs")
+  @@map("ai_jobs")
 }
 
 // ─── AI Tool Registry ─────────────────────────
 
 model AITool {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  slug        String   @unique // e.g. "image-gen", "style-transfer"
+  id          String       @id @default(cuid())
+  name        String       @unique
+  slug        String       @unique
   description String?
-  category    String?  // e.g. "Generation", "Editing", "Analysis"
-  provider    String?  // e.g. "openai", "stability", "replicate"
-  modelId     String?  // provider-specific model identifier
-  isActive    Boolean  @default(true)
-  config      Json?    // provider-specific config (non-secret)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  category    ToolCategory @default(IMAGE)
+  icon        String?
+  badge       String?
+  badgeKind   String?
+  provider    String?
+  modelId     String?
+  isActive    Boolean      @default(true)
+  sortOrder   Int          @default(0)
+  config      Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  batchJobs   BatchJob[]
+  jobs AIJob[]
 
   @@map("ai_tools")
+}
+
+// ─── Template ─────────────────────────────────
+
+model Template {
+  id           String   @id @default(cuid())
+  name         String
+  category     String
+  description  String?
+  thumbnailUrl String?
+  tags         String[]
+  isActive     Boolean  @default(true)
+  usageCount   Int      @default(0)
+  config       Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("templates")
 }
 
 // ─── Comment ──────────────────────────────────
@@ -223,8 +321,8 @@ model Comment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
+  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [authorId], references: [id])
 
   @@map("comments")
 }
@@ -232,17 +330,17 @@ model Comment {
 // ─── Assignment ───────────────────────────────
 
 model Assignment {
-  id          String    @id @default(cuid())
-  title       String
-  dueAt       DateTime?
-  isDone      Boolean   @default(false)
-  projectId   String?
-  assigneeId  String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  title      String
+  dueAt      DateTime?
+  isDone     Boolean   @default(false)
+  projectId  String?
+  assigneeId String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  project     Project?  @relation(fields: [projectId], references: [id])
-  assignee    User      @relation(fields: [assigneeId], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+  assignee User     @relation(fields: [assigneeId], references: [id])
 
   @@map("assignments")
 }
@@ -250,21 +348,21 @@ model Assignment {
 // ─── Activity Log ─────────────────────────────
 
 model ActivityLog {
-  id         String    @id @default(cuid())
-  action     String    // "approved", "uploaded", "generated", "commented", etc.
-  entityType String    // "asset", "project", "job"
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
   entityId   String
   detail     String?
   userId     String
   projectId  String?
   assetId    String?
   jobId      String?
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
-  user       User      @relation(fields: [userId], references: [id])
-  project    Project?  @relation(fields: [projectId], references: [id])
-  asset      Asset?    @relation(fields: [assetId], references: [id])
-  job        BatchJob? @relation(fields: [jobId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+  asset   Asset?   @relation(fields: [assetId], references: [id])
+  job     AIJob?   @relation(fields: [jobId], references: [id])
 
   @@index([projectId])
   @@index([userId])

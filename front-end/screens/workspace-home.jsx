@@ -59,22 +59,48 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   const [railCollapsed, setRailCollapsed] = React.useState(() => {
     try { return localStorage.getItem("bt_rail") === "1"; } catch (e) { return false; }
   });
+  // Live tools from API (falls back to static TOOLS)
+  const [tools, setTools] = React.useState(typeof TOOLS !== "undefined" ? TOOLS : []);
+  // Live recent jobs from API (falls back to RECENT_JOBS)
+  const [recentJobs, setRecentJobs] = React.useState(RECENT_JOBS);
+
   React.useEffect(() => {
     try { localStorage.setItem("bt_rail", railCollapsed ? "1" : "0"); } catch (e) {}
   }, [railCollapsed]);
 
+  React.useEffect(() => {
+    if (typeof toolsApi === "undefined") return;
+    toolsApi.listTools().then(({ data }) => {
+      if (data && data.length) {
+        // Re-attach icon objects from the static I map (API returns icon key only)
+        const withIcons = data.map(t => ({
+          ...t,
+          icon: (typeof I !== "undefined" && t.iconKey && I[t.iconKey]) ? I[t.iconKey] : (t.icon ?? null),
+        }));
+        setTools(withIcons);
+      }
+    }).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof jobsApi === "undefined") return;
+    jobsApi.listJobs({ limit: 5 }).then(({ data }) => {
+      if (data && data.length) setRecentJobs(data);
+    }).catch(() => {});
+  }, []);
+
   // Pinned tab = filter to pinned tool ids
   const visible = cat === "pinned"
-    ? TOOLS.filter(t => pinned.includes(t.id))
-    : TOOLS.filter(t => t.cat === cat);
+    ? tools.filter(t => pinned.includes(t.id))
+    : tools.filter(t => t.cat === cat);
 
   const countByCat = React.useMemo(() => {
     const o = { pinned: pinned.length };
-    CATEGORIES.forEach(c => o[c] = TOOLS.filter(t => t.cat === c).length);
+    CATEGORIES.forEach(c => o[c] = tools.filter(t => t.cat === c).length);
     return o;
-  }, [pinned]);
+  }, [pinned, tools]);
 
-  const pinnedTools = TOOLS.filter(t => pinned.includes(t.id)).slice(0, 4);
+  const pinnedTools = tools.filter(t => pinned.includes(t.id)).slice(0, 4);
 
   return (
     <div className={`toolhub ${railCollapsed ? "toolhub--collapsed" : ""}`}>
@@ -250,22 +276,38 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
             <a className="rail-section__link">View all →</a>
           </div>
           <div>
-            {RECENT_JOBS.map((j, i) => {
-              const [cls, txt] = statusToChip(j.status);
+            {recentJobs.map((j, i) => {
+              // Normalize API shape (type→cat, status casing, tool name)
+              const rawStatus = (j.status || "").toLowerCase();
+              const apiStatus = rawStatus === "running" ? "generating" : rawStatus === "queued" ? "queued" : rawStatus;
+              const [cls, txt] = statusToChip(apiStatus);
+              const cat = j.cat || (() => {
+                const t = (j.type || "").toLowerCase();
+                if (t.includes("video")) return "video";
+                if (t.includes("voice") || t.includes("audio") || t.includes("music") || t.includes("sfx")) return "audio";
+                return "image";
+              })();
+              const toolName = j.tool?.name || j.tool || "AI Tool";
+              const pct = j.progress ?? j.pct ?? 0;
+              const timeStr = j.time || (() => {
+                const d = Date.now() - new Date(j.createdAt || Date.now()).getTime();
+                const m = Math.floor(d / 60000);
+                return m < 1 ? "Just now" : m < 60 ? `${m}m ago` : `${Math.floor(m/60)}h ago`;
+              })();
               return (
-                <div className="job-row" key={i}>
-                  <div className={`job-row__ico tool-icon--${j.cat}`}>
-                    {j.cat === "image" ? I.imageGen : j.cat === "video" ? I.videoGen : j.cat === "audio" ? I.mic : I.spark}
+                <div className="job-row" key={j.id || i}>
+                  <div className={`job-row__ico tool-icon--${cat}`}>
+                    {cat === "image" ? I.imageGen : cat === "video" ? I.videoGen : cat === "audio" ? I.mic : I.spark}
                   </div>
                   <div className="job-row__body">
                     <div className="job-row__name">{j.name}</div>
                     <div className="job-row__meta">
-                      <span>{j.tool}</span>
+                      <span>{toolName}</span>
                       <span>·</span>
-                      <span>{j.time}</span>
+                      <span>{timeStr}</span>
                     </div>
-                    {j.status === "generating" ? (
-                      <div className="job-row__progress"><span style={{width: j.pct + "%"}}/></div>
+                    {apiStatus === "generating" ? (
+                      <div className="job-row__progress"><span style={{width: pct + "%"}}/></div>
                     ) : null}
                   </div>
                   <span className={cls}>{txt}</span>

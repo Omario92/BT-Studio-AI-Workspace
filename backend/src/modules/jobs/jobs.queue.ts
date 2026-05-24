@@ -24,26 +24,26 @@ export const jobQueue = new Queue(JOB_QUEUE_NAME, {
 export const jobWorker = new Worker(
   JOB_QUEUE_NAME,
   async (job) => {
-    const { batchJobId } = job.data as { batchJobId: string };
-    logger.info({ batchJobId, jobId: job.id }, 'Processing AI job');
+    const { jobId } = job.data as { jobId: string };
+    logger.info({ jobId, bullmqId: job.id }, 'Processing AI job');
 
     // Mark DB job as RUNNING
-    await prisma.batchJob.update({
-      where: { id: batchJobId },
+    await prisma.aIJob.update({
+      where: { id: jobId },
       data: { status: JobStatus.RUNNING, startedAt: new Date(), queueJobId: job.id },
     });
 
     try {
-      const result = await processAIJob(batchJobId, (progress) => {
+      const result = await processAIJob(jobId, (progress) => {
         job.updateProgress(progress);
-        prisma.batchJob.update({
-          where: { id: batchJobId },
+        prisma.aIJob.update({
+          where: { id: jobId },
           data: { progress },
         }).catch(() => {});
       });
 
-      await prisma.batchJob.update({
-        where: { id: batchJobId },
+      await prisma.aIJob.update({
+        where: { id: jobId },
         data: {
           status: JobStatus.COMPLETED,
           progress: 100,
@@ -52,11 +52,11 @@ export const jobWorker = new Worker(
         },
       });
 
-      logger.info({ batchJobId }, 'AI job completed');
+      logger.info({ jobId }, 'AI job completed');
       return result;
     } catch (err: any) {
-      await prisma.batchJob.update({
-        where: { id: batchJobId },
+      await prisma.aIJob.update({
+        where: { id: jobId },
         data: {
           status: JobStatus.FAILED,
           errorMsg: err?.message ?? 'Unknown error',
@@ -79,11 +79,11 @@ queueEvents.on('failed', ({ jobId, failedReason }) => {
 
 // ─── Helper: enqueue a new AI job ────────────
 
-export async function enqueueJob(batchJobId: string, type: JobType) {
+export async function enqueueJob(jobId: string, type: JobType) {
   const queueJob = await jobQueue.add(
     type,
-    { batchJobId },
-    { priority: type === 'BATCH_RENDER' ? 1 : 5 },
+    { jobId },
+    { priority: type === 'BATCH_GENERATION' ? 1 : 5 },
   );
   return queueJob.id;
 }

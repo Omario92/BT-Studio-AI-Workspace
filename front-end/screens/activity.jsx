@@ -76,6 +76,32 @@ function FilterGroup({ title, items, mode = "check" }) {
 }
 
 function ActivityLog() {
+  const [timeline, setTimeline] = React.useState(TIMELINE);
+
+  React.useEffect(() => {
+    if (typeof activityApi === "undefined") return;
+    activityApi.getActivity({ limit: 30 }).then(({ data }) => {
+      if (!data || !data.length) return;
+      // Map API entries to the shape the render expects
+      const mapped = data.map(entry => ({
+        t: new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        u: entry.user?.name ?? "Unknown",
+        i: (entry.user?.name ?? "?").split(" ").map(s => s[0]).join("").slice(0, 2),
+        c: "a",
+        act: entry.action,
+        obj: entry.asset?.name || entry.job?.name || entry.detail || entry.entityId,
+        proj: entry.project?.name ?? "",
+        icon: entry.action?.includes("approv") ? "green"
+            : entry.action?.includes("reject") ? "red"
+            : entry.action?.includes("comment") ? "amber"
+            : entry.action?.includes("upload") ? "blue"
+            : "default",
+        comment: entry.detail && entry.action?.includes("comment") ? entry.detail : undefined,
+      }));
+      setTimeline(mapped);
+    }).catch(() => {});
+  }, []);
+
   return (
     <div className="activity">
       <aside className="activity__filters">
@@ -134,7 +160,7 @@ function ActivityLog() {
         </div>
 
         <div className="timeline-list">
-          {TIMELINE.map((e, i) => (
+          {timeline.map((e, i) => (
             <div className="tl-item" key={i}>
               <span className={`tl-dot tl-dot--${e.icon === "approved" || e.icon === "green" ? "green" :
                                                   e.icon === "amber" ? "amber" :

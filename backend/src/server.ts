@@ -7,16 +7,19 @@ import { errorHandler } from './utils/errors';
 import logger from './utils/logger';
 
 // Plugins
-import authPlugin from './plugins/auth';
-import corsPlugin from './plugins/cors';
+import authPlugin    from './plugins/auth';
+import corsPlugin    from './plugins/cors';
 import swaggerPlugin from './plugins/swagger';
 
 // Routes
-import { authRoutes }    from './modules/auth/auth.routes';
-import { projectRoutes } from './modules/projects/projects.routes';
-import { assetRoutes }   from './modules/assets/assets.routes';
-import { jobRoutes }     from './modules/jobs/jobs.routes';
-import { toolRoutes }    from './modules/ai-tools/tools.routes';
+import { authRoutes }          from './modules/auth/auth.routes';
+import { dashboardRoutes }     from './modules/dashboard/dashboard.routes';
+import { projectRoutes }       from './modules/projects/projects.routes';
+import { assetRoutes, assetVersionRoutes } from './modules/assets/assets.routes';
+import { jobRoutes }           from './modules/jobs/jobs.routes';
+import { toolRoutes }          from './modules/ai-tools/tools.routes';
+import { activityRoutes }      from './modules/activity/activity.routes';
+import { templateRoutes }      from './modules/templates/templates.routes';
 
 // ─── Build App ───────────────────────────────
 
@@ -52,11 +55,15 @@ export async function buildApp() {
   });
 
   // ── Routes
-  fastify.register(authRoutes,    { prefix: '/api/auth' });
-  fastify.register(projectRoutes, { prefix: '/api/projects' });
-  fastify.register(assetRoutes,   { prefix: '/api/assets' });
-  fastify.register(jobRoutes,     { prefix: '/api/jobs' });
-  fastify.register(toolRoutes,    { prefix: '/api/tools' });
+  fastify.register(authRoutes,         { prefix: '/api/auth' });
+  fastify.register(dashboardRoutes,    { prefix: '/api/dashboard' });
+  fastify.register(projectRoutes,      { prefix: '/api/projects' });
+  fastify.register(assetRoutes,        { prefix: '/api/assets' });
+  fastify.register(assetVersionRoutes, { prefix: '/api/asset-versions' });
+  fastify.register(jobRoutes,          { prefix: '/api/jobs' });
+  fastify.register(toolRoutes,         { prefix: '/api/tools' });
+  fastify.register(activityRoutes,     { prefix: '/api/activity' });
+  fastify.register(templateRoutes,     { prefix: '/api/templates' });
 
   // ── Health check
   fastify.get('/health', {

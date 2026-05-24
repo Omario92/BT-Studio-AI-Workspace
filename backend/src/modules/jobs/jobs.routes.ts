@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { JobType } from '@prisma/client';
-import { createJob, getJob, listJobs, cancelJob, getQueueStats } from './jobs.service';
+import { createJob, getJob, listJobs, cancelJob, retryJob, getQueueStats } from './jobs.service';
 
 export async function jobRoutes(fastify: FastifyInstance) {
   const auth = { onRequest: [fastify.authenticate] };
 
-  // GET /jobs/queue-stats  (admin only)
+  // GET /api/jobs/queue-stats  (admin only)
   fastify.get('/queue-stats', {
     onRequest: [fastify.authenticate, fastify.requireRole(['ADMIN'])],
     schema: { tags: ['Jobs'], summary: 'Get live BullMQ queue statistics' },
@@ -14,7 +14,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
     return reply.send({ stats });
   });
 
-  // POST /jobs
+  // POST /api/jobs
   fastify.post('/', {
     ...auth,
     schema: {
@@ -38,15 +38,14 @@ export async function jobRoutes(fastify: FastifyInstance) {
     return reply.status(202).send({ job });
   });
 
-  // GET /jobs — list jobs for a project
+  // GET /api/jobs
   fastify.get('/', {
     ...auth,
     schema: {
       tags: ['Jobs'],
-      summary: 'List AI jobs for a project',
+      summary: 'List AI jobs (optionally filtered by projectId)',
       querystring: {
         type: 'object',
-        required: ['projectId'],
         properties: {
           projectId: { type: 'string' },
           page: { type: 'string' },
@@ -61,7 +60,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
     return reply.send(result);
   });
 
-  // GET /jobs/:id
+  // GET /api/jobs/:id
   fastify.get('/:id', {
     ...auth,
     schema: { tags: ['Jobs'], summary: 'Get job status and result' },
@@ -72,14 +71,25 @@ export async function jobRoutes(fastify: FastifyInstance) {
     return reply.send({ job });
   });
 
-  // POST /jobs/:id/cancel
+  // POST /api/jobs/:id/cancel
   fastify.post('/:id/cancel', {
     ...auth,
-    schema: { tags: ['Jobs'], summary: 'Cancel a pending or running job' },
+    schema: { tags: ['Jobs'], summary: 'Cancel a QUEUED or RUNNING job' },
   }, async (req, reply) => {
     const userId = (req.user as any).sub;
     const { id } = req.params as { id: string };
     const job = await cancelJob(id, userId);
+    return reply.send({ job });
+  });
+
+  // POST /api/jobs/:id/retry
+  fastify.post('/:id/retry', {
+    ...auth,
+    schema: { tags: ['Jobs'], summary: 'Retry a FAILED job' },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { id } = req.params as { id: string };
+    const job = await retryJob(id, userId);
     return reply.send({ job });
   });
 }

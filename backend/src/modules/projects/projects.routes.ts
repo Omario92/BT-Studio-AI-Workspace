@@ -2,13 +2,14 @@ import { FastifyInstance } from 'fastify';
 import {
   listProjects, getProject, createProject,
   updateProject, deleteProject, getProjectActivity,
+  getProjectFolders,
 } from './projects.service';
 import { listAssets, createAsset } from '../assets/assets.service';
 
 export async function projectRoutes(fastify: FastifyInstance) {
   const auth = { onRequest: [fastify.authenticate] };
 
-  // GET /projects
+  // GET /api/projects
   fastify.get('/', {
     ...auth,
     schema: { tags: ['Projects'], summary: 'List all accessible projects' },
@@ -19,12 +20,12 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.send(result);
   });
 
-  // POST /projects
+  // POST /api/projects
   fastify.post('/', {
     ...auth,
     schema: {
       tags: ['Projects'],
-      summary: 'Create a new project',
+      summary: 'Create a new project (also creates default folders)',
       body: {
         type: 'object',
         required: ['name', 'client'],
@@ -42,7 +43,7 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ project });
   });
 
-  // GET /projects/:id
+  // GET /api/projects/:id
   fastify.get('/:id', {
     ...auth,
     schema: { tags: ['Projects'], summary: 'Get project details' },
@@ -53,10 +54,10 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.send({ project });
   });
 
-  // PATCH /projects/:id
+  // PATCH /api/projects/:id
   fastify.patch('/:id', {
     ...auth,
-    schema: { tags: ['Projects'], summary: 'Update project' },
+    schema: { tags: ['Projects'], summary: 'Update project metadata or status' },
   }, async (req, reply) => {
     const userId = (req.user as any).sub;
     const { id } = req.params as { id: string };
@@ -64,7 +65,7 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.send({ project });
   });
 
-  // DELETE /projects/:id
+  // DELETE /api/projects/:id
   fastify.delete('/:id', {
     ...auth,
     schema: { tags: ['Projects'], summary: 'Delete project (owner only)' },
@@ -75,7 +76,53 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  // GET /projects/:id/activity
+  // GET /api/projects/:id/folders
+  fastify.get('/:id/folders', {
+    ...auth,
+    schema: { tags: ['Projects'], summary: 'List folders in a project' },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { id } = req.params as { id: string };
+    const folders = await getProjectFolders(id, userId);
+    return reply.send({ folders });
+  });
+
+  // GET /api/projects/:id/assets
+  fastify.get('/:id/assets', {
+    ...auth,
+    schema: {
+      tags: ['Projects'],
+      summary: 'List project assets',
+      querystring: {
+        type: 'object',
+        properties: {
+          folderId: { type: 'string' },
+          status: { type: 'string' },
+          page: { type: 'string' },
+          limit: { type: 'string' },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { id } = req.params as { id: string };
+    const query = req.query as any;
+    const result = await listAssets({ ...query, projectId: id }, userId);
+    return reply.send(result);
+  });
+
+  // POST /api/projects/:id/assets
+  fastify.post('/:id/assets', {
+    ...auth,
+    schema: { tags: ['Projects'], summary: 'Add an asset to a project' },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { id } = req.params as { id: string };
+    const asset = await createAsset({ ...(req.body as any), projectId: id }, userId);
+    return reply.status(201).send({ asset });
+  });
+
+  // GET /api/projects/:id/activity
   fastify.get('/:id/activity', {
     ...auth,
     schema: { tags: ['Projects'], summary: 'Get project activity log' },
@@ -85,28 +132,5 @@ export async function projectRoutes(fastify: FastifyInstance) {
     const { limit = '30' } = req.query as any;
     const logs = await getProjectActivity(id, userId, parseInt(limit));
     return reply.send({ logs });
-  });
-
-  // GET /projects/:id/assets
-  fastify.get('/:id/assets', {
-    ...auth,
-    schema: { tags: ['Projects'], summary: 'List project assets' },
-  }, async (req, reply) => {
-    const userId = (req.user as any).sub;
-    const { id } = req.params as { id: string };
-    const query = req.query as any;
-    const result = await listAssets({ ...query, projectId: id }, userId);
-    return reply.send(result);
-  });
-
-  // POST /projects/:id/assets
-  fastify.post('/:id/assets', {
-    ...auth,
-    schema: { tags: ['Projects'], summary: 'Add an asset to a project' },
-  }, async (req, reply) => {
-    const userId = (req.user as any).sub;
-    const { id } = req.params as { id: string };
-    const asset = await createAsset({ ...(req.body as any), projectId: id }, userId);
-    return reply.status(201).send({ asset });
   });
 }

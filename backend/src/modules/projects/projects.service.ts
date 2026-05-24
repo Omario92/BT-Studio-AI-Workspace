@@ -25,10 +25,7 @@ export async function listProjects(userId: string, page = 1, limit = 20) {
   const [projects, total] = await Promise.all([
     prisma.project.findMany({
       where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
       orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
       skip,
@@ -39,7 +36,7 @@ export async function listProjects(userId: string, page = 1, limit = 20) {
           take: 5,
           include: { user: { select: { id: true, name: true, avatarUrl: true } } },
         },
-        _count: { select: { assets: true, batchJobs: true } },
+        _count: { select: { assets: true, jobs: true } },
       },
     }),
     prisma.project.count({
@@ -63,22 +60,50 @@ export async function getProject(id: string, userId: string) {
     },
     include: {
       owner: { select: { id: true, name: true, avatarUrl: true } },
-      members: { include: { user: { select: { id: true, name: true, email: true, role: true, avatarUrl: true } } } },
+      members: {
+        include: { user: { select: { id: true, name: true, email: true, role: true, avatarUrl: true } } },
+      },
       folders: { where: { parentId: null }, include: { children: true } },
-      _count: { select: { assets: true, batchJobs: true } },
+      _count: { select: { assets: true, jobs: true } },
     },
   });
   if (!project) throw Errors.NotFound('Project not found');
   return project;
 }
 
+export async function getProjectFolders(projectId: string, userId: string) {
+  await assertProjectAccess(projectId, userId);
+  return prisma.folder.findMany({
+    where: { projectId, parentId: null },
+    include: {
+      children: true,
+      _count: { select: { assets: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+}
+
 export async function createProject(ownerId: string, data: CreateProjectInput) {
-  return prisma.project.create({
+  const project = await prisma.project.create({
     data: { ...data, ownerId },
     include: {
       owner: { select: { id: true, name: true, avatarUrl: true } },
     },
   });
+
+  // Create default folders
+  await prisma.folder.createMany({
+    data: [
+      { name: 'Brief',        projectId: project.id, depth: 1 },
+      { name: 'Script',       projectId: project.id, depth: 1 },
+      { name: 'Sketches',     projectId: project.id, depth: 1 },
+      { name: 'References',   projectId: project.id, depth: 1 },
+      { name: 'Generated',    projectId: project.id, depth: 1 },
+      { name: 'Final Output', projectId: project.id, depth: 1 },
+    ],
+  });
+
+  return project;
 }
 
 export async function updateProject(id: string, userId: string, data: UpdateProjectInput) {
