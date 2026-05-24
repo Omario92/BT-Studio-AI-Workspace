@@ -3615,7 +3615,20 @@ function Dashboard() {
                       <strong>{name}</strong> {a.action || a.act}{" "}
                       <span style={{color:"var(--ink)"}}>{a.detail || a.what}</span>
                     </div>
-                    <div className="activity-row__time">{timeAgo(a.createdAt || new Date().toISOString())<script type="text/babel">
+                    <div className="activity-row__time">{timeAgo(a.createdAt || new Date().toISOString())}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+</script>
+
+<script type="text/babel">
 const STATUS = {
   DRAFT:      ["chip chip--draft",     "Draft"],
   WIP:        ["chip chip--wip",       "WIP"],
