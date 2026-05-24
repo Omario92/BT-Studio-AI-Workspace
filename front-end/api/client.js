@@ -127,6 +127,7 @@ const apiClient = {
   put:    (path, body, opts) => request('PUT',    path, body,      opts),
   delete: (path, opts)       => request('DELETE', path, undefined, opts),
   auth,
+  baseUrl: API_BASE,
 };
 
 window.apiClient = apiClient;

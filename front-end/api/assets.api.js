@@ -53,10 +53,26 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
 
   const { uploadUrl, fileKey } = presign;
 
+  // Self-heal: If uploadUrl contains localhost but browser is NOT on localhost, rewrite it to use production backend
+  let finalUploadUrl = uploadUrl;
+  if (uploadUrl.startsWith('http://localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    try {
+      const urlObj = new URL(uploadUrl);
+      const apiBaseUrl = apiClient.baseUrl || 'https://bt-studio-ai-backend.up.railway.app';
+      const apiBaseObj = new URL(apiBaseUrl);
+      urlObj.protocol = apiBaseObj.protocol;
+      urlObj.host = apiBaseObj.host;
+      finalUploadUrl = urlObj.toString();
+      console.log(`[assetsApi] Patched local upload URL to production host: ${finalUploadUrl}`);
+    } catch (e) {
+      console.error('[assetsApi] Failed to patch local upload URL:', e);
+    }
+  }
+
   // 2. Upload raw file binary via PUT
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', uploadUrl, true);
+    xhr.open('PUT', finalUploadUrl, true);
     xhr.setRequestHeader('Content-Type', file.type);
 
     if (xhr.upload) {

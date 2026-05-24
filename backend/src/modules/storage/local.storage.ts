@@ -37,6 +37,16 @@ export class LocalStorageProvider implements StorageProvider {
     return fullPath;
   }
 
+  private getBaseUrl(): string {
+    if (env.STORAGE_PUBLIC_BASE_URL) {
+      return env.STORAGE_PUBLIC_BASE_URL;
+    }
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+    return `http://localhost:${env.PORT}`;
+  }
+
   async createPresignedUpload(
     projectId: string,
     assetId: string,
@@ -47,7 +57,8 @@ export class LocalStorageProvider implements StorageProvider {
     const fileKey = `projects/${projectId}/assets/${assetId}/versions/v${versionNumber}/${filename}`;
     
     // In local mode, we route the upload to our own Fastify server's custom upload handler
-    const uploadUrl = `http://localhost:${env.PORT}/api/storage/local-upload?fileKey=${encodeURIComponent(fileKey)}`;
+    const baseUrl = this.getBaseUrl();
+    const uploadUrl = `${baseUrl}/api/storage/local-upload?fileKey=${encodeURIComponent(fileKey)}`;
 
     return {
       uploadUrl,
@@ -58,7 +69,8 @@ export class LocalStorageProvider implements StorageProvider {
 
   async createSignedDownload(fileKey: string, _expiresInSeconds?: number): Promise<string> {
     // Simply returns local file route that our Fastify server serves or a direct path
-    return `http://localhost:${env.PORT}/api/storage/files/${fileKey}`;
+    const baseUrl = this.getBaseUrl();
+    return `${baseUrl}/api/storage/files/${fileKey}`;
   }
 
   async putObject(fileKey: string, body: Buffer | ArrayBuffer | string, _mimeType: string): Promise<StoredObject> {
@@ -75,10 +87,11 @@ export class LocalStorageProvider implements StorageProvider {
 
     await fs.promises.writeFile(filePath, buffer);
     const stats = await fs.promises.stat(filePath);
+    const baseUrl = this.getBaseUrl();
 
     return {
       fileKey,
-      fileUrl: `http://localhost:${env.PORT}/api/storage/files/${fileKey}`,
+      fileUrl: `${baseUrl}/api/storage/files/${fileKey}`,
       mimeType: _mimeType,
       fileSizeBytes: stats.size
     };
