@@ -1,0 +1,106 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────
+#  BT Studio AI Workspace — Local Dev Stack
+#  Services: postgres · redis · api
+# ─────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: bt_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bt_user
+      POSTGRES_PASSWORD: bt_pass
+      POSTGRES_DB: bt_studio
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bt_user -d bt_studio']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (BullMQ job queue) ─────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: bt_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── BT Studio API ────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder          # use builder stage for hot-reload in dev
+    container_name: bt_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://bt_user:bt_pass@postgres:5432/bt_studio?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: local-dev-secret-change-in-production
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+    volumes:
+      - .:/app
+      - /app/node_modules          # keep container node_modules isolated
+    ports:
+      - '3001:3001'
+    command: >
+      sh -c "
+        npx prisma migrate deploy &&
+        npx tsx src/server.ts
+      "
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Prisma Studio (optional, dev only) ───────
+  prisma-studio:
+    image: node:20-alpine
+    container_name: bt_prisma_studio
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://bt_user:bt_pass@postgres:5432/bt_studio?schema=public
+    volumes:
+      - .:/app
+    ports:
+      - '5555:5555'
+    command: npx prisma studio --port 5555 --browser none
+    profiles:
+      - dev-tools              # only starts with: docker compose --profile dev-tools up
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: bt_studio_net

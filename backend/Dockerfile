@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────
+#  BT Studio Backend — Multi-stage Dockerfile
+# ─────────────────────────────────────────────
+
+# Stage 1: Build
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install deps first (cache layer)
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# Copy source & build
+COPY tsconfig.json ./
+COPY prisma ./prisma/
+COPY src ./src/
+
+RUN npm run db:generate
+RUN npm run build
+
+# ─────────────────────────────────────────────
+# Stage 2: Production image
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Install only prod deps
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+
+# Copy built output + Prisma client
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/prisma ./prisma
+
+# Non-root user for security
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+USER nodejs
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+CMD ["node", "dist/server.js"]

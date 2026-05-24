@@ -1,0 +1,272 @@
+// ─────────────────────────────────────────────
+//  BT Studio AI Workspace — Prisma Schema
+// ─────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────
+
+enum Role {
+  ADMIN
+  ARTIST
+  REVIEWER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  COMPLETED
+}
+
+enum AssetStatus {
+  DRAFT
+  WIP
+  APPROVED
+  FAILED
+  GENERATING
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  IMAGE_GENERATION
+  STYLE_TRANSFER
+  BATCH_RENDER
+  CHARACTER_CONSISTENCY
+  UPSCALE
+  CUSTOM
+}
+
+// ─── User ─────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(ARTIST)
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  ownedProjects  Project[]        @relation("ProjectOwner")
+  projectMembers ProjectMember[]
+  assets         Asset[]          @relation("AssetCreator")
+  batchJobs      BatchJob[]
+  comments       Comment[]
+  assignments    Assignment[]
+  activityLogs   ActivityLog[]
+
+  @@map("users")
+}
+
+// ─── Project ──────────────────────────────────
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  client      String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  progress    Int           @default(0) // 0-100
+  tone        String?       // UI color hint: rose, amber, teal, etc.
+  isPinned    Boolean       @default(false)
+  ownerId     String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  folders     Folder[]
+  assets      Asset[]
+  batchJobs   BatchJob[]
+  assignments Assignment[]
+  activityLogs ActivityLog[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      Role     @default(ARTIST)
+  joinedAt  DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+// ─── Folder ───────────────────────────────────
+
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  parentId  String?
+  depth     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    Folder?  @relation("FolderChildren", fields: [parentId], references: [id])
+  children  Folder[] @relation("FolderChildren")
+  assets    Asset[]
+
+  @@map("folders")
+}
+
+// ─── Asset ────────────────────────────────────
+
+model Asset {
+  id          String      @id @default(cuid())
+  name        String
+  fileUrl     String?
+  mimeType    String?
+  fileSizeBytes Int?
+  status      AssetStatus @default(DRAFT)
+  version     Int         @default(1)
+  projectId   String
+  folderId    String?
+  creatorId   String
+  jobId       String?     // if AI-generated, link to the BatchJob
+  metadata    Json?       // flexible AI generation params
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder      Folder?     @relation(fields: [folderId], references: [id])
+  creator     User        @relation("AssetCreator", fields: [creatorId], references: [id])
+  job         BatchJob?   @relation(fields: [jobId], references: [id])
+  comments    Comment[]
+  activityLogs ActivityLog[]
+
+  @@map("assets")
+}
+
+// ─── Batch Job ────────────────────────────────
+
+model BatchJob {
+  id          String    @id @default(cuid())
+  name        String?
+  type        JobType
+  status      JobStatus @default(PENDING)
+  progress    Int       @default(0) // 0-100
+  queueJobId  String?   // BullMQ job ID
+  projectId   String
+  userId      String
+  toolId      String?
+  params      Json      // generation parameters
+  result      Json?     // output metadata / URLs
+  errorMsg    String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+  tool        AITool?   @relation(fields: [toolId], references: [id])
+  assets      Asset[]
+  activityLogs ActivityLog[]
+
+  @@map("batch_jobs")
+}
+
+// ─── AI Tool Registry ─────────────────────────
+
+model AITool {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique // e.g. "image-gen", "style-transfer"
+  description String?
+  category    String?  // e.g. "Generation", "Editing", "Analysis"
+  provider    String?  // e.g. "openai", "stability", "replicate"
+  modelId     String?  // provider-specific model identifier
+  isActive    Boolean  @default(true)
+  config      Json?    // provider-specific config (non-secret)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  batchJobs   BatchJob[]
+
+  @@map("ai_tools")
+}
+
+// ─── Comment ──────────────────────────────────
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  assetId   String
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@map("comments")
+}
+
+// ─── Assignment ───────────────────────────────
+
+model Assignment {
+  id          String    @id @default(cuid())
+  title       String
+  dueAt       DateTime?
+  isDone      Boolean   @default(false)
+  projectId   String?
+  assigneeId  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project?  @relation(fields: [projectId], references: [id])
+  assignee    User      @relation(fields: [assigneeId], references: [id])
+
+  @@map("assignments")
+}
+
+// ─── Activity Log ─────────────────────────────
+
+model ActivityLog {
+  id         String    @id @default(cuid())
+  action     String    // "approved", "uploaded", "generated", "commented", etc.
+  entityType String    // "asset", "project", "job"
+  entityId   String
+  detail     String?
+  userId     String
+  projectId  String?
+  assetId    String?
+  jobId      String?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id])
+  project    Project?  @relation(fields: [projectId], references: [id])
+  asset      Asset?    @relation(fields: [assetId], references: [id])
+  job        BatchJob? @relation(fields: [jobId], references: [id])
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
