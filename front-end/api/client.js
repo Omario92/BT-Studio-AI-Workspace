@@ -13,7 +13,7 @@
 
 const API_BASE = (typeof window !== 'undefined' && window.__BT_API_BASE__)
   ? window.__BT_API_BASE__
-  : 'http://localhost:3001';
+  : 'https://bt-studio-ai-backend.up.railway.app';
 
 // ─── Token helpers ───────────────────────────
 
