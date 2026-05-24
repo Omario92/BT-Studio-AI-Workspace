@@ -25,6 +25,35 @@ function ProjectMgmt() {
   const [treeCollapsed, setTreeCollapsed] = React.useState(() => {
     try { return localStorage.getItem("bt_pm_tree") === "1"; } catch (e) { return false; }
   });
+  const fileInputRef = React.useRef(null);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+
+  const handleUploadClick = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentProject) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const newAsset = await assetsApi.uploadAsset(currentProject.id, activeFolderId, file, (pct) => {
+        setUploadProgress(pct);
+      });
+      setAssets((prev) => [newAsset, ...prev]);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to upload file");
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (e.target) e.target.value = "";
+    }
+  };
 
   React.useEffect(() => {
     try { localStorage.setItem("bt_pm_tree", treeCollapsed ? "1" : "0"); } catch (e) {}
@@ -193,13 +222,33 @@ function ProjectMgmt() {
           </div>
         )}
 
+        {uploading && (
+          <div style={{ background: "var(--accent-tint)", color: "var(--accent)", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 200 }}>
+              <span className="dot-status dot-status--generating" style={{ width: 10, height: 10, display: "inline-block" }} />
+              Uploading file... <strong>{uploadProgress}%</strong>
+            </div>
+            <div style={{ flex: 1, height: 4, background: "var(--line)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ width: `${uploadProgress}%`, height: "100%", background: "var(--accent)", transition: "width 100ms ease" }} />
+            </div>
+          </div>
+        )}
+
         <div style={{display:"flex", alignItems:"center", gap:14, marginBottom:6}}>
           <div>
             <div className="crumbs">PROJECTS / <strong>{projName.toUpperCase()}</strong> / {activeFolderName}</div>
             <h1 className="page-title" style={{marginTop:4}}>{projName}</h1>
           </div>
           <div style={{flex:1}} />
-          <button className="btn btn--secondary">{I.upload}<span>Upload</span></button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
+          <button className="btn btn--secondary" onClick={handleUploadClick} disabled={uploading}>
+            {I.upload}<span>Upload</span>
+          </button>
           <button className="btn btn--secondary">{I.filter}<span>Filter</span></button>
           <button className="btn btn--primary">{I.spark}<span>Open in AI Workspace</span></button>
         </div>

@@ -160,3 +160,75 @@ export async function getQueueStats() {
   ]);
   return { waiting, active, completed, failed };
 }
+
+export async function createBatch(
+  projectId: string,
+  toolId: string,
+  inputs: { name?: string; params: Record<string, unknown> }[],
+  userId: string,
+) {
+  const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const jobs = [];
+
+  for (const input of inputs) {
+    const job = await prisma.aIJob.create({
+      data: {
+        name: input.name || `Batch Frame`,
+        type: JobType.IMAGE_GENERATION,
+        projectId,
+        toolId,
+        params: { ...input.params, batchId } as Prisma.InputJsonValue,
+        userId,
+        status: JobStatus.QUEUED,
+      },
+    });
+
+    const queueJobId = await enqueueJob(job.id, JobType.IMAGE_GENERATION);
+    await prisma.aIJob.update({ where: { id: job.id }, data: { queueJobId } });
+    
+    jobs.push(job);
+  }
+
+  await prisma.activityLog.create({
+    data: {
+      action: 'started batch',
+      entityType: 'job',
+      entityId: batchId,
+      detail: `${inputs.length} jobs enqueued`,
+      userId,
+      projectId,
+    },
+  });
+
+  return { batchId, totalJobs: inputs.length, jobs };
+}
+
+export async function getBatchStatus(batchId: string) {
+  const jobs = await prisma.aIJob.findMany({
+    where: {
+      params: {
+        path: ['batchId'],
+        equals: batchId,
+      },
+    },
+    include: {
+      assets: {
+        select: { id: true, name: true, fileUrl: true, status: true },
+      },
+    },
+  });
+
+  const total = jobs.length;
+  const completed = jobs.filter(j => j.status === JobStatus.COMPLETED).length;
+  const failed = jobs.filter(j => j.status === JobStatus.FAILED).length;
+  const running = jobs.filter(j => j.status === JobStatus.RUNNING).length;
+
+  return {
+    batchId,
+    total,
+    completed,
+    failed,
+    running,
+    jobs,
+  };
+}

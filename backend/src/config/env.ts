@@ -27,6 +27,27 @@ export const env = {
 
   STORAGE_DRIVER: (process.env.STORAGE_DRIVER ?? 'local') as 'local' | 's3',
   STORAGE_LOCAL_PATH: process.env.STORAGE_LOCAL_PATH ?? './uploads',
+  STORAGE_PUBLIC_BASE_URL: process.env.STORAGE_PUBLIC_BASE_URL ?? '',
+  STORAGE_BUCKET: process.env.STORAGE_BUCKET ?? 'bt-studio-assets',
+  STORAGE_REGION: process.env.STORAGE_REGION ?? 'auto',
+  STORAGE_ENDPOINT: process.env.STORAGE_ENDPOINT ?? '',
+  STORAGE_ACCESS_KEY_ID: process.env.STORAGE_ACCESS_KEY_ID ?? '',
+  STORAGE_SECRET_ACCESS_KEY: process.env.STORAGE_SECRET_ACCESS_KEY ?? '',
+
+  GOOGLE_DRIVE_ENABLED: (process.env.GOOGLE_DRIVE_ENABLED === 'true'),
+  GOOGLE_DRIVE_SHARED_DRIVE_ID: process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? '',
+  GOOGLE_DRIVE_ARCHIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_ARCHIVE_FOLDER_ID ?? '',
+  GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON ?? '',
+
+  RUNPOD_API_KEY: process.env.RUNPOD_API_KEY ?? '',
+  RUNPOD_ENDPOINT_ID: process.env.RUNPOD_ENDPOINT_ID ?? '',
+  RUNPOD_BASE_URL: process.env.RUNPOD_BASE_URL ?? 'https://api.runpod.ai/v2',
+
+  COMFYUI_BASE_URL: process.env.COMFYUI_BASE_URL ?? '',
+  COMFYUI_API_KEY: process.env.COMFYUI_API_KEY ?? '',
+  COMFYUI_DEFAULT_WORKFLOW_IMAGE_GENERATION: process.env.COMFYUI_DEFAULT_WORKFLOW_IMAGE_GENERATION ?? '',
+  COMFYUI_DEFAULT_WORKFLOW_UPSCALE: process.env.COMFYUI_DEFAULT_WORKFLOW_UPSCALE ?? '',
+  COMFYUI_DEFAULT_WORKFLOW_IMAGE_EDIT: process.env.COMFYUI_DEFAULT_WORKFLOW_IMAGE_EDIT ?? '',
 
   isDev: (process.env.NODE_ENV ?? 'development') === 'development',
   isProd: process.env.NODE_ENV === 'production',

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { JobType } from '@prisma/client';
-import { createJob, getJob, listJobs, cancelJob, retryJob, getQueueStats } from './jobs.service';
+import { createJob, getJob, listJobs, cancelJob, retryJob, getQueueStats, createBatch, getBatchStatus } from './jobs.service';
 
 export async function jobRoutes(fastify: FastifyInstance) {
   const auth = { onRequest: [fastify.authenticate] };
@@ -91,5 +91,51 @@ export async function jobRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const job = await retryJob(id, userId);
     return reply.send({ job });
+  });
+
+  // POST /api/jobs/batches
+  fastify.post('/batches', {
+    ...auth,
+    schema: {
+      tags: ['Jobs'],
+      summary: 'Enqueue multiple child jobs as a single batch',
+      body: {
+        type: 'object',
+        required: ['projectId', 'toolId', 'inputs'],
+        properties: {
+          projectId: { type: 'string' },
+          toolId: { type: 'string' },
+          inputs: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['params'],
+              properties: {
+                name: { type: 'string' },
+                params: { type: 'object' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { projectId, toolId, inputs } = req.body as any;
+    const batch = await createBatch(projectId, toolId, inputs, userId);
+    return reply.status(201).send(batch);
+  });
+
+  // GET /api/jobs/batches/:batchId
+  fastify.get('/batches/:batchId', {
+    ...auth,
+    schema: {
+      tags: ['Jobs'],
+      summary: 'Retrieve real-time aggregate status for a batch run',
+    },
+  }, async (req, reply) => {
+    const { batchId } = req.params as { batchId: string };
+    const batchStatus = await getBatchStatus(batchId);
+    return reply.send(batchStatus);
   });
 }

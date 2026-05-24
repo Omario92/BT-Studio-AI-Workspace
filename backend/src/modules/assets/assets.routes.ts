@@ -4,6 +4,7 @@ import {
   listVersions, createVersion,
   addComment,
   sendToReview, approveVersion, rejectVersion, requestRevision,
+  getVersion, getReviews, getComments,
 } from './assets.service';
 
 export async function assetRoutes(fastify: FastifyInstance) {
@@ -95,6 +96,62 @@ export async function assetRoutes(fastify: FastifyInstance) {
     const asset = await sendToReview(id, userId);
     return reply.send({ asset });
   });
+
+  // POST /assets/upload
+  fastify.post('/upload', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Upload a completed file to create a new Asset and AssetVersion v1',
+      body: {
+        type: 'object',
+        required: ['projectId', 'fileName', 'fileUrl'],
+        properties: {
+          projectId: { type: 'string' },
+          folderId: { type: 'string' },
+          fileName: { type: 'string' },
+          mimeType: { type: 'string' },
+          fileSizeBytes: { type: 'number' },
+          fileKey: { type: 'string' },
+          metadata: { type: 'object' },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const body = req.body as any;
+    const asset = await createAsset({
+      name: body.fileName,
+      projectId: body.projectId,
+      folderId: body.folderId,
+      fileUrl: body.fileUrl,
+      mimeType: body.mimeType,
+      fileSizeBytes: body.fileSizeBytes,
+      metadata: { ...body.metadata, fileKey: body.fileKey },
+    }, userId);
+    const completeAsset = await getAsset(asset.id);
+    return reply.status(201).send({ asset: completeAsset });
+  });
+
+  // GET /assets/:id/reviews
+  fastify.get('/:id/reviews', {
+    ...auth,
+    schema: { tags: ['Assets'], summary: 'Get all reviews for an asset' },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const reviews = await getReviews(id);
+    return reply.send({ reviews });
+  });
+
+  // GET /assets/:id/comments
+  fastify.get('/:id/comments', {
+    ...auth,
+    schema: { tags: ['Assets'], summary: 'Get all comments for an asset' },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const comments = await getComments(id);
+    return reply.send({ comments });
+  });
 }
 
 // ─── Asset Version review actions ─────────────
@@ -160,5 +217,15 @@ export async function assetVersionRoutes(fastify: FastifyInstance) {
     const userId = (req.user as any).sub;
     const review = await requestRevision(versionId, userId, comment);
     return reply.status(201).send({ review });
+  });
+
+  // GET /asset-versions/:versionId
+  fastify.get('/:versionId', {
+    ...auth,
+    schema: { tags: ['Reviews'], summary: 'Get details for a specific asset version' },
+  }, async (req, reply) => {
+    const { versionId } = req.params as { versionId: string };
+    const version = await getVersion(versionId);
+    return reply.send({ version });
   });
 }

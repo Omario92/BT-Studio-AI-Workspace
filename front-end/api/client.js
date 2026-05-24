@@ -13,7 +13,11 @@
 
 const API_BASE = (typeof window !== 'undefined' && window.__BT_API_BASE__)
   ? window.__BT_API_BASE__
-  : 'https://bt-studio-ai-backend.up.railway.app';
+  : (typeof process !== 'undefined' && process.env?.VITE_API_URL)
+    ? process.env.VITE_API_URL
+    : (typeof window !== 'undefined' && window.location.origin.includes('bt-studio-ai-workspace.vercel.app'))
+      ? 'https://bt-studio-ai-backend.up.railway.app'
+      : 'http://localhost:3001';
 
 // ─── Token helpers ───────────────────────────
 

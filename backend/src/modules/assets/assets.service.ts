@@ -106,6 +106,18 @@ export async function createAsset(data: CreateAssetInput, creatorId: string) {
     },
   });
 
+  // Create ActivityLog entry for upload
+  await prisma.activityLog.create({
+    data: {
+      action: 'uploaded',
+      entityType: 'asset',
+      entityId: asset.id,
+      userId: creatorId,
+      projectId: data.projectId,
+      assetId: asset.id,
+    },
+  });
+
   return asset;
 }
 
@@ -300,4 +312,42 @@ export async function addComment(assetId: string, body: string, authorId: string
   });
 
   return comment;
+}
+
+export async function getVersion(versionId: string) {
+  const version = await prisma.assetVersion.findUnique({
+    where: { id: versionId },
+    include: {
+      reviews: {
+        include: { reviewer: { select: { id: true, name: true, avatarUrl: true } } },
+      },
+    },
+  });
+  if (!version) throw Errors.NotFound('Asset version not found');
+  return version;
+}
+
+export async function getReviews(assetId: string) {
+  const asset = await prisma.asset.findUnique({ where: { id: assetId } });
+  if (!asset) throw Errors.NotFound('Asset not found');
+
+  return prisma.review.findMany({
+    where: { version: { assetId } },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      reviewer: { select: { id: true, name: true, avatarUrl: true } },
+      version: { select: { id: true, versionNumber: true } },
+    },
+  });
+}
+
+export async function getComments(assetId: string) {
+  const asset = await prisma.asset.findUnique({ where: { id: assetId } });
+  if (!asset) throw Errors.NotFound('Asset not found');
+
+  return prisma.comment.findMany({
+    where: { assetId },
+    orderBy: { createdAt: 'asc' },
+    include: { author: { select: { id: true, name: true, avatarUrl: true } } },
+  });
 }

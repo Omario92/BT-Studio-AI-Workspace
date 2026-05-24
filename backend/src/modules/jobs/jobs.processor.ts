@@ -2,16 +2,16 @@
  * jobs.processor.ts
  *
  * Core AI job processing logic. Each JobType maps to a handler that
- * calls the appropriate AI tool service and stores the result assets.
- *
- * Add new job types here — the queue worker calls processAIJob() for all.
- * Replace stub implementations with real provider SDK calls in production.
+ * calls the appropriate AI tool provider and stores the result assets in Storage.
  */
 
 import prisma from '../../config/database';
-import { JobType, AssetStatus } from '@prisma/client';
+import { JobType, AssetStatus, Prisma } from '@prisma/client';
 import { Errors } from '../../utils/errors';
 import logger from '../../utils/logger';
+import { getAIProvider } from '../ai-tools/providers/provider.factory';
+import { storageService } from '../storage/storage.service';
+import { createAsset, createVersion } from '../assets/assets.service';
 
 type ProgressCallback = (pct: number) => void;
 
@@ -26,181 +26,141 @@ export async function processAIJob(
   if (!job) throw Errors.NotFound('AIJob not found');
 
   const params = job.params as Record<string, unknown>;
-
-  switch (job.type) {
-    case JobType.IMAGE_GENERATION:
-      return handleImageGeneration(job, params, onProgress);
-    case JobType.IMAGE_UPSCALE:
-      return handleUpscale(job, params, onProgress);
-    case JobType.IMAGE_EDIT:
-      return handleImageEdit(job, params, onProgress);
-    case JobType.VARIATION:
-      return handleVariation(job, params, onProgress);
-    case JobType.REMOVE_BACKGROUND:
-      return handleRemoveBackground(job, params, onProgress);
-    case JobType.RELIGHT:
-      return handleRelight(job, params, onProgress);
-    case JobType.VIDEO_GENERATION:
-      return handleVideoGeneration(job, params, onProgress);
-    case JobType.VOICE_GENERATION:
-      return handleVoiceGeneration(job, params, onProgress);
-    case JobType.BATCH_GENERATION:
-      return handleBatchGeneration(job, params, onProgress);
-    case JobType.CUSTOM:
-      return handleCustom(job, params, onProgress);
-    default:
-      throw new Error(`Unsupported job type: ${job.type}`);
+  
+  // Resolve tool slug and provider
+  const tool = job.tool;
+  if (!tool) {
+    throw Errors.BadRequest('No AI Tool associated with this job');
   }
-}
 
-// ─── Shared asset creation helper ────────────
+  // Get active provider instance
+  const provider = getAIProvider(tool.provider || 'mock');
 
-async function persistAsset(job: any, name: string, fileUrl: string, mimeType: string, params: Record<string, unknown>) {
-  const asset = await prisma.asset.create({
-    data: {
-      name,
-      fileUrl,
-      mimeType,
-      status: AssetStatus.DRAFT,
-      currentVersion: 1,
-      projectId: job.projectId,
-      creatorId: job.userId,
-      jobId: job.id,
-      metadata: params as any,
-    },
+  logger.info({ jobId, toolSlug: tool.slug, provider: tool.provider }, 'Running production AI Job pipeline');
+  onProgress(10);
+
+  // 1. Invoke AI Provider
+  let result = await provider.invoke({
+    toolSlug: tool.slug,
+    params,
+    jobId: job.id
   });
+  onProgress(40);
 
-  // Create initial version record
-  await prisma.assetVersion.create({
-    data: {
-      assetId: asset.id,
-      versionNumber: 1,
-      fileUrl,
-      mimeType,
-      status: AssetStatus.DRAFT,
+  // 2. Poll if Pending
+  let pollAttempts = 0;
+  const maxAttempts = 120; // 4 minutes max
+  while (result.status === 'PENDING' && provider.poll && pollAttempts < maxAttempts) {
+    logger.debug({ jobId, providerJobId: result.providerJobId, attempt: pollAttempts }, 'Polling provider status...');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    result = await provider.poll(result.providerJobId!, tool.slug);
+    pollAttempts++;
+    onProgress(Math.min(40 + Math.round((pollAttempts / 10) * 10), 85));
+  }
+
+  if (result.status !== 'COMPLETED' || !result.fileUrl) {
+    throw new Error(result.errorMsg || 'AI Provider failed to complete or returned no outputs');
+  }
+
+  onProgress(90);
+
+  // 3. Resolve Asset and Version numbers
+  const assetId = (params.assetId as string) || `ast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  let existingAsset = null;
+  if (params.assetId) {
+    existingAsset = await prisma.asset.findUnique({ where: { id: params.assetId as string } });
+  }
+
+  const nextVersion = existingAsset ? (existingAsset.currentVersion + 1) : 1;
+  const ext = result.fileUrl.split('?')[0].split('.').pop() || 'png';
+  const filename = `${tool.slug.replace(/-/g, '_')}_${Date.now()}.${ext}`;
+  const mimeType = ext === 'mp4' ? 'video/mp4' : ext === 'wav' ? 'audio/wav' : ext === 'mp3' ? 'audio/mpeg' : 'image/png';
+  const fileKey = `projects/${job.projectId}/assets/${assetId}/versions/v${nextVersion}/${filename}`;
+
+  // 4. Download output and store in primary StorageProvider
+  logger.info({ providerUrl: result.fileUrl, fileKey }, 'Copying provider outputs to primary Storage');
+  const storedObject = await storageService.copyFromUrl(result.fileUrl, fileKey, mimeType);
+
+  let finalAssetId = '';
+  let finalAssetVersionId = '';
+
+  // 5. Persist inside Database
+  if (existingAsset) {
+    logger.info({ assetId: existingAsset.id, version: nextVersion }, 'Appending new version to existing asset');
+    const version = await createVersion(existingAsset.id, job.userId, {
+      fileUrl: storedObject.fileUrl,
+      mimeType: storedObject.mimeType,
+      fileSizeBytes: storedObject.fileSizeBytes,
       jobId: job.id,
-      createdById: job.userId,
-    },
-  });
+      notes: (params.notes as string) || `Generated via ${tool.name}`,
+      params: params,
+    });
+    finalAssetId = existingAsset.id;
+    finalAssetVersionId = version.id;
+  } else {
+    logger.info({ assetId, version: 1 }, 'Creating brand new Asset and Version v1');
+    // Force set the generated asset id to avoid default random uuid
+    const asset = await prisma.asset.create({
+      data: {
+        id: assetId,
+        name: filename,
+        fileUrl: storedObject.fileUrl,
+        mimeType: storedObject.mimeType,
+        fileSizeBytes: storedObject.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        currentVersion: 1,
+        projectId: job.projectId,
+        creatorId: job.userId,
+        jobId: job.id,
+        metadata: params as any,
+      },
+    });
+
+    const version = await prisma.assetVersion.create({
+      data: {
+        assetId: asset.id,
+        versionNumber: 1,
+        fileUrl: storedObject.fileUrl,
+        mimeType: storedObject.mimeType,
+        fileSizeBytes: storedObject.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        jobId: job.id,
+        createdById: job.userId,
+      },
+    });
+    finalAssetId = asset.id;
+    finalAssetVersionId = version.id;
+  }
+
+  // 6. Log precise AI Action activity log
+  let action = 'generated';
+  if (job.type === JobType.IMAGE_UPSCALE) action = 'upscaled';
+  else if (job.type === JobType.IMAGE_EDIT) action = 'edited';
+  else if (job.type === JobType.REMOVE_BACKGROUND) action = 'removed background';
+  else if (job.type === JobType.RELIGHT) action = 'relit';
+  else if (job.type === JobType.VIDEO_GENERATION) action = 'generated video';
+  else if (job.type === JobType.VOICE_GENERATION) action = 'generated voice';
 
   await prisma.activityLog.create({
     data: {
-      action: 'generated',
+      action,
       entityType: 'asset',
-      entityId: asset.id,
+      entityId: finalAssetId,
       userId: job.userId,
       projectId: job.projectId,
-      assetId: asset.id,
+      assetId: finalAssetId,
       jobId: job.id,
     },
   });
 
-  return asset;
-}
-
-// ─── Handlers ────────────────────────────────
-
-async function handleImageGeneration(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  logger.debug({ jobId: job.id, params }, 'Starting image generation');
-  onProgress(10);
-  // TODO: const res = await openai.images.generate({ model: 'dall-e-3', prompt: params.prompt as string });
-  const mockUrl = `https://cdn.btstudio.ai/generated/${job.id}/output.png`;
-  onProgress(80);
-  const asset = await persistAsset(job, `Generated_${Date.now()}.png`, mockUrl, 'image/png', params);
   onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
 
-async function handleUpscale(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(20);
-  // TODO: call Replicate upscaler model
-  const mockUrl = `https://cdn.btstudio.ai/upscale/${job.id}/output.png`;
-  onProgress(90);
-  const asset = await persistAsset(job, `Upscaled_${Date.now()}.png`, mockUrl, 'image/png', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleImageEdit(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(20);
-  const mockUrl = `https://cdn.btstudio.ai/edit/${job.id}/output.png`;
-  onProgress(85);
-  const asset = await persistAsset(job, `Edited_${Date.now()}.png`, mockUrl, 'image/png', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleVariation(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(15);
-  const mockUrl = `https://cdn.btstudio.ai/variation/${job.id}/output.png`;
-  onProgress(85);
-  const asset = await persistAsset(job, `Variation_${Date.now()}.png`, mockUrl, 'image/png', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleRemoveBackground(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(30);
-  const mockUrl = `https://cdn.btstudio.ai/remove-bg/${job.id}/output.png`;
-  onProgress(90);
-  const asset = await persistAsset(job, `NoBG_${Date.now()}.png`, mockUrl, 'image/png', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleRelight(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(25);
-  const mockUrl = `https://cdn.btstudio.ai/relight/${job.id}/output.png`;
-  onProgress(90);
-  const asset = await persistAsset(job, `Relit_${Date.now()}.png`, mockUrl, 'image/png', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleVideoGeneration(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(10);
-  // TODO: call video generation provider (e.g. Runway, Kling)
-  const mockUrl = `https://cdn.btstudio.ai/video/${job.id}/output.mp4`;
-  onProgress(90);
-  const asset = await persistAsset(job, `VideoGen_${Date.now()}.mp4`, mockUrl, 'video/mp4', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleVoiceGeneration(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(20);
-  // TODO: call ElevenLabs / custom TTS
-  const mockUrl = `https://cdn.btstudio.ai/voice/${job.id}/output.wav`;
-  onProgress(90);
-  const asset = await persistAsset(job, `Voice_${Date.now()}.wav`, mockUrl, 'audio/wav', params);
-  onProgress(100);
-  return { assetId: asset.id, fileUrl: mockUrl };
-}
-
-async function handleBatchGeneration(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  const frameCount = (params.frameCount as number) ?? 10;
-  const assets: { assetId: string; fileUrl: string }[] = [];
-
-  for (let i = 0; i < frameCount; i++) {
-    const pct = Math.round(((i + 1) / frameCount) * 90);
-    onProgress(pct);
-    const mockUrl = `https://cdn.btstudio.ai/batch/${job.id}/frame_${i.toString().padStart(4, '0')}.png`;
-    const asset = await persistAsset(
-      job,
-      `Frame_${i.toString().padStart(4, '0')}.png`,
-      mockUrl,
-      'image/png',
-      { ...params, frameIndex: i },
-    );
-    assets.push({ assetId: asset.id, fileUrl: mockUrl });
-  }
-  onProgress(100);
-  return { frameCount, assets };
-}
-
-async function handleCustom(job: any, params: Record<string, unknown>, onProgress: ProgressCallback) {
-  onProgress(50);
-  logger.info({ jobId: job.id }, 'Custom job — no built-in handler');
-  onProgress(100);
-  return { info: 'Custom job processed', params };
+  return {
+    assetId: finalAssetId,
+    assetVersionId: finalAssetVersionId,
+    fileUrl: storedObject.fileUrl,
+    fileKey: storedObject.fileKey,
+    provider: tool.provider || 'mock',
+    toolSlug: tool.slug,
+  };
 }

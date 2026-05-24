@@ -20,6 +20,7 @@ import { jobRoutes }           from './modules/jobs/jobs.routes';
 import { toolRoutes }          from './modules/ai-tools/tools.routes';
 import { activityRoutes }      from './modules/activity/activity.routes';
 import { templateRoutes }      from './modules/templates/templates.routes';
+import { storageRoutes }       from './modules/storage/storage.routes';
 
 // ─── Build App ───────────────────────────────
 
@@ -64,6 +65,7 @@ export async function buildApp() {
   fastify.register(toolRoutes,         { prefix: '/api/tools' });
   fastify.register(activityRoutes,     { prefix: '/api/activity' });
   fastify.register(templateRoutes,     { prefix: '/api/templates' });
+  fastify.register(storageRoutes,      { prefix: '/api/storage' });
 
   // ── Health check
   fastify.get('/health', {
@@ -83,9 +85,13 @@ export async function buildApp() {
 async function start() {
   const app = await buildApp();
 
-  // Start BullMQ worker
-  const { jobWorker } = await import('./modules/jobs/jobs.queue');
-  jobWorker.on('error', (err) => logger.error({ err }, 'Worker error'));
+  // Start BullMQ worker if Redis is enabled
+  if (process.env.DISABLE_REDIS !== 'true') {
+    const { jobWorker } = await import('./modules/jobs/jobs.queue');
+    jobWorker.on('error', (err) => logger.error({ err }, 'Worker error'));
+  } else {
+    logger.info('BullMQ queue worker is disabled via DISABLE_REDIS env');
+  }
 
   try {
     await app.listen({ port: env.PORT, host: env.HOST });
