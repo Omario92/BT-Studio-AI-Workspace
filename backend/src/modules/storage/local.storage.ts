@@ -9,8 +9,20 @@ export class LocalStorageProvider implements StorageProvider {
 
   constructor() {
     this.baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
-    if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
+    try {
+      if (!fs.existsSync(this.baseDir)) {
+        fs.mkdirSync(this.baseDir, { recursive: true });
+      }
+    } catch (err: any) {
+      console.warn(`[LocalStorageProvider] Warning: Failed to create base directory ${this.baseDir} (${err.message}). Falling back to /tmp/uploads`);
+      this.baseDir = path.resolve('/tmp/uploads');
+      try {
+        if (!fs.existsSync(this.baseDir)) {
+          fs.mkdirSync(this.baseDir, { recursive: true });
+        }
+      } catch (fallbackErr: any) {
+        console.error(`[LocalStorageProvider] Critical: Failed to create fallback directory ${this.baseDir}:`, fallbackErr.message);
+      }
     }
   }
 
