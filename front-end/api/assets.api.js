@@ -129,6 +129,93 @@ async function createLocalImageThumbnail(file) {
   }
 }
 
+async function createLocalVideoThumbnail(file) {
+  if (!file.type.startsWith('video/')) {
+    return { localThumbnailUrl: null, thumbnailBlob: null, thumbnailFileName: null };
+  }
+
+  const localVideoUrl = URL.createObjectURL(file);
+
+  try {
+    const blob = await new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.src = localVideoUrl;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+
+      // Seek to 1 second to avoid black frames
+      video.currentTime = 1;
+
+      video.onseeked = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = video.videoWidth;
+          let height = video.videoHeight;
+
+          const MAX_WIDTH = 480;
+          const MAX_HEIGHT = 320;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Failed to get 2D canvas context'));
+            return;
+          }
+          ctx.drawImage(video, 0, 0, width, height);
+
+          canvas.toBlob((b) => {
+            if (b) resolve(b);
+            else reject(new Error('Canvas toBlob failed'));
+          }, 'image/webp', 0.85);
+        } catch (e) {
+          reject(e);
+        }
+      };
+
+      video.onerror = () => reject(new Error('Video loading failed'));
+
+      // 5-second safety timeout
+      setTimeout(() => {
+        reject(new Error('Video thumbnail generation timed out'));
+      }, 5000);
+    });
+
+    const originalName = file.name;
+    const dotIdx = originalName.lastIndexOf('.');
+    const baseName = dotIdx !== -1 ? originalName.slice(0, dotIdx) : originalName;
+    const thumbnailFileName = `thumb_${baseName}.webp`;
+
+    const localThumbnailUrl = URL.createObjectURL(blob);
+
+    return {
+      localThumbnailUrl,
+      thumbnailBlob: blob,
+      thumbnailFileName,
+    };
+  } catch (err) {
+    console.warn('[createLocalVideoThumbnail] Failed, proceed without video thumbnail:', err);
+    return {
+      localThumbnailUrl: null,
+      thumbnailBlob: null,
+      thumbnailFileName: null,
+    };
+  }
+}
+
 async function uploadAsset(projectId, folderId, file, onProgress) {
   const assetId = `ast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -136,6 +223,8 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
   let thumbData = { localThumbnailUrl: null, thumbnailBlob: null, thumbnailFileName: null };
   if (file.type.startsWith('image/')) {
     thumbData = await createLocalImageThumbnail(file);
+  } else if (file.type.startsWith('video/')) {
+    thumbData = await createLocalVideoThumbnail(file);
   }
 
   // 2. Get presigned upload URL for main file

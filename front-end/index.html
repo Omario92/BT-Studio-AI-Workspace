@@ -3767,6 +3767,10 @@ function ProjectMgmt() {
   };
 
   const handleOpenAsset = async (asset) => {
+    if (asset.isUploading || (asset.id && asset.id.toString().startsWith('optimistic_'))) {
+      console.log("[AssetGrid] Cannot open optimistic asset, upload in progress");
+      return;
+    }
     console.log("[AssetGrid] Open asset", asset.id);
     setReviewError(null);
     setReviewComment('');
@@ -4278,6 +4282,9 @@ function ProjectMgmt() {
                       if (thumbSrc) {
                         return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />;
                       }
+                      if ((a.mimeType?.startsWith('video/') || a.name?.endsWith('.mp4') || a.name?.endsWith('.mov') || a.name?.endsWith('.webm')) && a.fileUrl) {
+                        return <video src={resolveFileUrl(a.fileUrl)} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline preload="metadata" />;
+                      }
                       return <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />;
                     })()}
                   </div>
@@ -4407,6 +4414,9 @@ function AssetList({ assets, onSelect }) {
                 if (thumbSrc) {
                   return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />;
                 }
+                if ((a.mimeType?.startsWith('video/') || a.name?.endsWith('.mp4') || a.name?.endsWith('.mov') || a.name?.endsWith('.webm')) && a.fileUrl) {
+                  return <video src={resolveFileUrl(a.fileUrl)} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline preload="metadata" />;
+                }
                 return <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />;
               })()}
             </div>
@@ -4470,6 +4480,9 @@ function AssetCompare({ assets, onSelect }) {
             const thumbSrc = asset.localThumbnailUrl || asset.thumbnailUrl || asset.metadata?.thumbnailUrl || asset.metadata?.thumbnailSignedUrl || "";
             if (thumbSrc) {
               return <img src={resolveFileUrl(thumbSrc)} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
+            }
+            if ((asset.mimeType?.startsWith('video/') || asset.name?.endsWith('.mp4') || asset.name?.endsWith('.mov') || asset.name?.endsWith('.webm')) && asset.fileUrl) {
+              return <video src={resolveFileUrl(asset.fileUrl)} style={{ width: "100%", height: "100%", objectFit: "contain" }} muted playsInline preload="metadata" />;
             }
             return <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />;
           })()}
@@ -4707,7 +4720,7 @@ function AssetReviewModal({
               Comments ({asset.comments?.length ?? 0})
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
-              {(asset.comments ?? []).map(c => (
+              {(Array.isArray(asset.comments) ? asset.comments : []).map(c => (
                 <div key={c.id} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '6px 8px', background: 'var(--bg-canvas)', borderRadius: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                     <strong>{c.author?.name ?? 'User'}</strong>
