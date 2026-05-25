@@ -44,6 +44,9 @@ export class LocalStorageProvider implements StorageProvider {
     if (process.env.RAILWAY_PUBLIC_DOMAIN) {
       return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
     }
+    if (process.env.RAILWAY_STATIC_URL) {
+      return `https://${process.env.RAILWAY_STATIC_URL}`;
+    }
     return `http://localhost:${env.PORT}`;
   }
 
