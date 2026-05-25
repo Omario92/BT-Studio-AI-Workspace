@@ -72,7 +72,7 @@ function ProjectMgmt() {
       assetsApi.getAssetComments(assetId),
     ]);
     return {
-      ...fullAsset,
+      ...(fullAsset || {}),
       versions: versions ?? [],
       reviews: reviews ?? [],
       comments: comments ?? [],
