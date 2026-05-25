@@ -89,6 +89,7 @@ function ProjectMgmt() {
       if (thumbFileKey && !asset.metadata?.thumbnailSignedUrl) {
         try {
           const signedUrl = await assetsApi.getSignedUrl(thumbFileKey);
+          console.log("[Thumbnail] hydrated", asset.id, signedUrl);
           setAssets((prev) =>
             prev.map((a) =>
               a.id === asset.id
@@ -147,17 +148,40 @@ function ProjectMgmt() {
       const detailed = await reloadAssetDetail(asset.id);
       setPreviewAsset(detailed);
 
-      const fileKey = detailed.metadata?.fileKey || (detailed.versions?.[0]?.params?.fileKey) || asset.metadata?.fileKey;
+      const fileKey =
+        detailed.metadata?.fileKey ||
+        detailed.latestVersion?.params?.fileKey ||
+        detailed.versions?.[0]?.params?.fileKey ||
+        detailed.versions?.[0]?.metadata?.fileKey ||
+        asset.metadata?.fileKey ||
+        null;
+
+      console.log("[AssetPreview] fileKey", fileKey);
+
       if (fileKey) {
         try {
           const signedUrl = await assetsApi.getSignedUrl(fileKey);
-          setPreviewUrl(signedUrl);
+          console.log("[AssetPreview] signedUrl", signedUrl);
+          if (!signedUrl) {
+            setPreviewError("Could not generate preview URL for this asset.");
+          } else {
+            setPreviewUrl(signedUrl);
+          }
         } catch (signedErr) {
           console.warn('[handleOpenAsset] Failed to load signed URL:', signedErr);
-          setPreviewUrl(resolveFileUrl(detailed.fileUrl || asset.fileUrl));
+          const fallback = resolveFileUrl(detailed.fileUrl || asset.fileUrl);
+          if (fallback) {
+            setPreviewUrl(fallback);
+          } else {
+            setPreviewError("Could not generate preview URL for this asset.");
+          }
         }
+      } else if (detailed.fileUrl || asset.fileUrl) {
+        const urlToUse = detailed.fileUrl || asset.fileUrl;
+        console.log("[AssetPreview] No fileKey, falling back to fileUrl:", urlToUse);
+        setPreviewUrl(resolveFileUrl(urlToUse));
       } else {
-        setPreviewUrl(resolveFileUrl(detailed.fileUrl || asset.fileUrl));
+        setPreviewError("No fileKey or fileUrl found for preview.");
       }
     } catch (err) {
       setReviewError(err?.message || 'Failed to load asset details');
@@ -980,6 +1004,32 @@ function AssetReviewModal({
             <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
               Open in new tab
             </a>
+          )}
+
+          {(asset.mimeType || '').startsWith('image/') && (previewUrl || asset.metadata?.fileKey) && (
+            <button
+              className="btn btn--primary"
+              style={{ justifyContent: 'center', background: 'var(--primary)', color: '#FFFFFF' }}
+              onClick={() => {
+                localStorage.setItem("bt_edit_asset", JSON.stringify({
+                  assetId: asset.id,
+                  assetName: asset.name,
+                  fileKey: asset.metadata?.fileKey || null,
+                  previewUrl: previewUrl || null,
+                  mimeType: asset.mimeType,
+                  versionId: asset.latestVersion?.id || asset.versions?.[0]?.id || null,
+                }));
+                localStorage.setItem("bt_tool", "editor");
+                localStorage.setItem("bt_screen", "workspace");
+                window.location.reload();
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+              Edit in AI Workspace
+            </button>
           )}
 
           {/* Versions */}

@@ -12,6 +12,7 @@
 - Backend server: `npm run dev` or equivalent in `backend` directory.
 
 ## Recent Changes
+- (2026-05-25) Resolved signed URL contract mismatch by supporting both 'url' and 'fileUrl' responses, ensuring thumbnail hydration and full previews display correctly. Added "Edit in AI Workspace" button to AssetReviewModal, enabling seamless transition and preloading of selected image assets into the Workspace Image Editor. Synced index.html script blocks for projects.jsx and workspace-workbench.jsx.
 - (2026-05-25) Implemented client-side image thumbnail generation (canvas WebP resizing) and dual-upload workflow (uploading original and thumbnail separately). Hydrated thumbnails dynamically in AssetGrid, AssetList, and AssetCompare, and switched the full AssetReviewModal preview to on-demand lazy-loading via backend signed URLs to optimize R2 storage usage. Removed the "Send to Review" button from the modal.
 - (2026-05-25) Resolved mixed content and connection refused issues for asset images by adding a `resolveFileUrl` helper to dynamically rewrite localhost storage paths to the production backend. Synced front-end/index.html with front-end/screens/projects.jsx and verified changes.
 - (2026-05-25) Wired folders plus button, AssetReviewModal selection/onSelect properties, AssetList/AssetCompare integration, and quick debug logs in projects.jsx. Verified backend route registration for folderRoutes.

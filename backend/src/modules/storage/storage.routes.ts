@@ -112,7 +112,10 @@ export async function storageRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { fileKey } = req.query as { fileKey: string };
     const downloadUrl = await storageService.createSignedDownload(fileKey);
-    return reply.send({ url: downloadUrl });
+    return reply.send({
+      url: downloadUrl,
+      fileUrl: downloadUrl,
+    });
   });
 
   // New query string route for deletion (Slash safe)
@@ -146,7 +149,10 @@ export async function storageRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { fileKey } = req.params as { fileKey: string };
     const downloadUrl = await storageService.createSignedDownload(fileKey);
-    return reply.send({ url: downloadUrl });
+    return reply.send({
+      url: downloadUrl,
+      fileUrl: downloadUrl,
+    });
   });
 
   // DELETE /api/storage/:fileKey (Backward compatible, legacy)

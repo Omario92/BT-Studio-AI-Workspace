@@ -52,8 +52,13 @@ async function requestRevision(versionId, comment) {
 }
 
 async function getSignedUrl(fileKey) {
-  const { data } = await apiClient.get(`/api/storage/signed-url?fileKey=${encodeURIComponent(fileKey)}`);
-  return data.fileUrl;
+  if (!fileKey) return null;
+
+  const { data } = await apiClient.get(
+    `/api/storage/signed-url?fileKey=${encodeURIComponent(fileKey)}`
+  );
+
+  return data.url || data.fileUrl || null;
 }
 
 async function createLocalImageThumbnail(file) {

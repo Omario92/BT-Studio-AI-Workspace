@@ -191,6 +191,16 @@ function EditorWorkbench({ tool, onBack }) {
   const [brushSize, setBrushSize] = React.useState(48);
   const [prompt, setPrompt] = React.useState("Replace the bottle's label with the Halida hero logo, keep the metallic finish and golden hour lighting.");
 
+  // Load selected edit asset from localStorage if available
+  const [editAsset, setEditAsset] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem("bt_edit_asset");
+      return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
   const tools = [
     { id: "select",  ico: I.panelLeft },
     { id: "brush",   ico: I.brush },
@@ -216,14 +226,25 @@ function EditorWorkbench({ tool, onBack }) {
                 borderRadius: 10, padding: 8,
                 display: "flex", alignItems: "center", gap: 10
               }}>
-                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden"}}>
-                  <Placeholder tone="amber" label="" style={{height:"100%", borderRadius: 0}} />
+                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: 'var(--bg-canvas-2)'}}>
+                  {editAsset?.previewUrl ? (
+                    <img src={editAsset.previewUrl} alt={editAsset.assetName} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                  ) : (
+                    <Placeholder tone="amber" label="" style={{height:"100%", borderRadius: 0}} />
+                  )}
                 </div>
                 <div style={{flex: 1, minWidth: 0}}>
-                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff"}}>Bottle_Hero_v1.png</div>
-                  <div style={{fontFamily:"var(--f-mono)", fontSize: 10, color:"var(--ink-on-dark-3)", marginTop: 2}}>v1 · 2048 × 2048</div>
+                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}} title={editAsset?.assetName || "Bottle_Hero_v1.png"}>
+                    {editAsset?.assetName || "Bottle_Hero_v1.png"}
+                  </div>
+                  <div style={{fontFamily:"var(--f-mono)", fontSize: 10, color:"var(--ink-on-dark-3)", marginTop: 2}}>
+                    {editAsset ? `v1 · ${editAsset.mimeType || 'image/png'}` : "v1 · 2048 × 2048"}
+                  </div>
                 </div>
-                <button className="icon-btn">{I.refresh}</button>
+                <button className="icon-btn" title="Clear selection" onClick={() => {
+                  localStorage.removeItem("bt_edit_asset");
+                  setEditAsset(null);
+                }}>{I.x}</button>
               </div>
             </div>
 
@@ -292,8 +313,12 @@ function EditorWorkbench({ tool, onBack }) {
             </div>
           </div>
           <div className="ed-stage">
-            <div className="ed-image">
-              <Placeholder tone="amber" label="BOTTLE_HERO_V1" style={{position:"absolute", inset:0, borderRadius: 0}}/>
+            <div className="ed-image" style={{ background: '#0D0F12', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+              {editAsset?.previewUrl ? (
+                <img src={editAsset.previewUrl} alt={editAsset.assetName} style={{maxWidth: '100%', maxHeight: '100%', objectFit: 'contain'}} />
+              ) : (
+                <Placeholder tone="amber" label="BOTTLE_HERO_V1" style={{position:"absolute", inset:0, borderRadius: 0}}/>
+              )}
               <div className="ed-mask">
                 <span style={{top: "26%", left: "40%", width: 180, height: 220}}/>
                 <span style={{top: "44%", left: "48%", width: 90, height: 70}}/>
@@ -311,14 +336,19 @@ function EditorWorkbench({ tool, onBack }) {
               Local edit prompt
               <span className="field__hint" style={{marginLeft:"auto"}}>EDITS MASKED AREAS ONLY</span>
             </label>
-            <textarea className="textarea" value={prompt} onChange={e => setPrompt(e.target.value)} />
+            <textarea
+              className="textarea"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              placeholder="Describe what to change..."
+            />
           </div>
           <div className="ed-foot">
             <button className="btn btn--ghost">{I.refresh}<span>Clear mask</span></button>
             <button className="btn btn--ghost">{I.eye}<span>Hide mask</span></button>
             <span style={{flex:1}}/>
             <button className="btn btn--secondary">{I.save}<span>Save as new version</span></button>
-            <button className="btn btn--primary">{I.spark}<span>Regenerate selection</span></button>
+            <button className="btn btn--primary">{I.spark}<span>Generate Edit</span></button>
           </div>
         </section>
 
