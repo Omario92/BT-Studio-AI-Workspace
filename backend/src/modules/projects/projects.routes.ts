@@ -4,6 +4,7 @@ import {
   updateProject, deleteProject, getProjectActivity,
   getProjectFolders,
 } from './projects.service';
+import { createFolder } from '../folders/folders.service';
 import { listAssets, createAsset } from '../assets/assets.service';
 
 export async function projectRoutes(fastify: FastifyInstance) {
@@ -85,6 +86,28 @@ export async function projectRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const folders = await getProjectFolders(id, userId);
     return reply.send({ folders });
+  });
+
+  // POST /api/projects/:id/folders
+  fastify.post('/:id/folders', {
+    ...auth,
+    schema: {
+      tags: ['Projects'],
+      summary: 'Create a folder in a project',
+      body: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          parentId: { type: 'string' },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { id } = req.params as { id: string };
+    const folder = await createFolder(id, userId, req.body as any);
+    return reply.status(201).send({ folder });
   });
 
   // GET /api/projects/:id/assets

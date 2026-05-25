@@ -21,6 +21,7 @@ import { toolRoutes }          from './modules/ai-tools/tools.routes';
 import { activityRoutes }      from './modules/activity/activity.routes';
 import { templateRoutes }      from './modules/templates/templates.routes';
 import { storageRoutes }       from './modules/storage/storage.routes';
+import { folderRoutes }        from './modules/folders/folders.routes';
 
 // ─── Build App ───────────────────────────────
 
@@ -66,6 +67,7 @@ export async function buildApp() {
   fastify.register(activityRoutes,     { prefix: '/api/activity' });
   fastify.register(templateRoutes,     { prefix: '/api/templates' });
   fastify.register(storageRoutes,      { prefix: '/api/storage' });
+  fastify.register(folderRoutes,       { prefix: '/api/folders' });
 
   // ── Health check
   fastify.get('/health', {

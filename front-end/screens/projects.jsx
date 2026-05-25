@@ -29,8 +29,44 @@ function ProjectMgmt() {
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
 
+  // New folder modal
+  const [folderModalOpen, setFolderModalOpen] = React.useState(false);
+  const [newFolderName, setNewFolderName] = React.useState('');
+  const [folderCreating, setFolderCreating] = React.useState(false);
+  const [folderError, setFolderError] = React.useState(null);
+
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleOpenFolderModal = () => {
+    if (!currentProject) return;
+    setNewFolderName('');
+    setFolderError(null);
+    setFolderModalOpen(true);
+  };
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) { setFolderError('Folder name is required'); return; }
+    if (!currentProject) return;
+
+    setFolderCreating(true);
+    setFolderError(null);
+    try {
+      const { data: newFolder } = await projectsApi.createFolder(currentProject.id, {
+        name,
+        parentId: activeFolderId || undefined,
+      });
+      setFolders((prev) => [...prev, newFolder]);
+      setActiveFolderId(newFolder.id);
+      setFolderModalOpen(false);
+      setNewFolderName('');
+    } catch (err) {
+      setFolderError(err?.response?.data?.error?.message || err?.message || 'Failed to create folder');
+    } finally {
+      setFolderCreating(false);
+    }
   };
 
   const handleFileChange = async (e) => {
@@ -192,7 +228,7 @@ function ProjectMgmt() {
       <aside className="pm__tree">
         <div className="tree__header">
           <h3>Project Files</h3>
-          <button className="icon-btn icon-btn--light" title="New folder">{I.plus}</button>
+          <button className="icon-btn icon-btn--light" title="New folder" onClick={handleOpenFolderModal}>{I.plus}</button>
           <button
             className="icon-btn icon-btn--light"
             title="Hide file tree"
@@ -385,6 +421,48 @@ function ProjectMgmt() {
           <AssetCompare assets={assets} />
         )}
       </div>
+
+      {/* ── New Folder Modal ── */}
+      {folderModalOpen && (
+      <div
+        style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        onClick={() => setFolderModalOpen(false)}>
+        <div
+          style={{
+            background: 'var(--surface)', border: '1px solid var(--line)',
+            borderRadius: 10, padding: '28px 28px 24px', width: 360,
+            display: 'flex', flexDirection: 'column', gap: 16,
+          }}
+          onClick={(e) => e.stopPropagation()}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>New Folder</h3>
+          <input
+            autoFocus
+            type="text"
+            className="input"
+            placeholder="Folder name"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setFolderModalOpen(false); }}
+            style={{ width: '100%', boxSizing: 'border-box' }}
+          />
+          {folderError && (
+            <div style={{ fontSize: 12, color: 'var(--st-rejected, #f87171)' }}>{folderError}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn--ghost" onClick={() => setFolderModalOpen(false)} disabled={folderCreating}>
+              Cancel
+            </button>
+            <button className="btn btn--primary" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
+              {folderCreating ? 'Creating…' : 'Create Folder'}
+            </button>
+          </div>
+        </div>
+      </div>
+      )}
     </div>
   );
 }
