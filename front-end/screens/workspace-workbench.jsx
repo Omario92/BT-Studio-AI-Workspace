@@ -31,6 +31,91 @@ function UpscalerWorkbench({ tool, onBack }) {
   const [detail, setDetail] = React.useState(72);
   const [denoise, setDenoise] = React.useState(45);
 
+  // ─── Source asset from selection bar (Projects → Use with AI) ───
+  const [sourceAsset, setSourceAsset] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem("bt_selected_assets_for_ai");
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      const first = parsed?.assets?.[0];
+      return first ? { ...first, projectId: parsed.projectId } : null;
+    } catch (_e) { return null; }
+  });
+
+  const clearSource = () => {
+    localStorage.removeItem("bt_selected_assets_for_ai");
+    setSourceAsset(null);
+  };
+
+  // ─── Job state machine ──────────────────────────
+  // status: 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed'
+  const [jobStatus, setJobStatus] = React.useState("idle");
+  const [jobId, setJobId] = React.useState(null);
+  const [jobProgress, setJobProgress] = React.useState(0);
+  const [jobError, setJobError] = React.useState(null);
+  const [resultUrl, setResultUrl] = React.useState(null);
+  const [resultAssetId, setResultAssetId] = React.useState(null);
+
+  // ─── Poll job until terminal status ─────────────
+  React.useEffect(() => {
+    if (!jobId || jobStatus === "completed" || jobStatus === "failed") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const job = await window.jobsApi.getJob(jobId);
+        if (cancelled) return;
+        setJobProgress(job.progress ?? 0);
+        if (job.status === "RUNNING")   setJobStatus("running");
+        if (job.status === "QUEUED")    setJobStatus("queued");
+        if (job.status === "COMPLETED") {
+          setJobStatus("completed");
+          const result = job.result || {};
+          if (result.fileUrl)   setResultUrl(result.fileUrl);
+          if (result.assetId)   setResultAssetId(result.assetId);
+        }
+        if (job.status === "FAILED") {
+          setJobStatus("failed");
+          setJobError(job.errorMsg || "Job failed");
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setJobStatus("failed");
+        setJobError(err.message || "Failed to poll job status");
+      }
+    };
+    tick(); // immediate first poll
+    const id = setInterval(tick, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [jobId, jobStatus]);
+
+  const busy = jobStatus === "submitting" || jobStatus === "queued" || jobStatus === "running";
+
+  const handleRunUpscale = async () => {
+    if (!sourceAsset || busy) return;
+    setJobStatus("submitting");
+    setJobError(null);
+    setResultUrl(null);
+    setResultAssetId(null);
+    setJobProgress(0);
+    try {
+      const scale = factor === "2x" ? 2 : factor === "4x" ? 4 : 8;
+      const res = await window.assetsApi.useWithAI([sourceAsset.id], {
+        projectId: sourceAsset.projectId,
+        toolId: "upscaler",          // backend resolves slug → id
+        jobType: "IMAGE_UPSCALE",
+        mode: "single",
+        params: { scale, faceEnhance: !!face },
+      });
+      const newJobId = res?.job?.id;
+      if (!newJobId) throw new Error("No job id returned from /use-with-ai");
+      setJobId(newJobId);
+      setJobStatus("queued");
+    } catch (err) {
+      setJobStatus("failed");
+      setJobError(err.message || "Failed to start upscale job");
+    }
+  };
+
   return (
     <>
       <WorkbenchHead tool={tool} onBack={onBack} />
@@ -49,16 +134,27 @@ function UpscalerWorkbench({ tool, onBack }) {
                 borderRadius: 10, padding: 8,
                 display: "flex", alignItems: "center", gap: 10
               }}>
-                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden"}}>
-                  <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
+                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: 'var(--bg-canvas-2)'}}>
+                  {sourceAsset?.fileUrl ? (
+                    <img src={sourceAsset.fileUrl} alt={sourceAsset.name}
+                         style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                  ) : (
+                    <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
+                  )}
                 </div>
                 <div style={{flex: 1, minWidth: 0}}>
-                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff"}}>KV_Hero_Image_v4.png</div>
+                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap'}} title={sourceAsset?.name}>
+                    {sourceAsset?.name || "No source selected"}
+                  </div>
                   <div style={{fontFamily:"var(--f-mono)", fontSize: 10, color:"var(--ink-on-dark-3)", marginTop: 2}}>
-                    1024 × 1024 · 1.2 MB
+                    {sourceAsset
+                      ? (sourceAsset.mimeType || 'image/png')
+                      : "Pick from Projects → Use with AI"}
                   </div>
                 </div>
-                <button className="icon-btn">{I.x}</button>
+                {sourceAsset && (
+                  <button className="icon-btn" onClick={clearSource} title="Clear source">{I.x}</button>
+                )}
               </div>
             </div>
 
@@ -135,8 +231,27 @@ function UpscalerWorkbench({ tool, onBack }) {
             </div>
           </div>
           <div className="up-side__foot">
-            <button className="btn btn--secondary" style={{flex:1, justifyContent:"center", background:"var(--bg-input-dark)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}>Reset</button>
-            <button className="btn btn--primary" style={{flex:2, justifyContent:"center"}}>{I.spark}<span>Upscale</span></button>
+            <button
+              className="btn btn--secondary"
+              style={{flex:1, justifyContent:"center", background:"var(--bg-input-dark)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}
+              disabled={busy}
+              onClick={() => { setFactor("4x"); setFace(true); setDetail(72); setDenoise(45); }}>
+              Reset
+            </button>
+            <button
+              className="btn btn--primary"
+              style={{flex:2, justifyContent:"center"}}
+              disabled={busy || !sourceAsset}
+              onClick={handleRunUpscale}
+              title={!sourceAsset ? "Pick an asset from Projects → Use with AI first" : ""}>
+              {I.spark}
+              <span>
+                {jobStatus === "submitting" ? "Starting…"
+                  : jobStatus === "queued"  ? "Queued…"
+                  : jobStatus === "running" ? `Upscaling… ${jobProgress}%`
+                  : "Upscale"}
+              </span>
+            </button>
           </div>
         </aside>
 
@@ -144,7 +259,15 @@ function UpscalerWorkbench({ tool, onBack }) {
         <section className="up-canvas">
           <header className="up-canvas__head">
             <span className="lbl">Before / After</span>
-            <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>UPSCALE COMPLETE</span>
+            {jobStatus === "completed" && (
+              <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>UPSCALE COMPLETE</span>
+            )}
+            {(jobStatus === "queued" || jobStatus === "running") && (
+              <span className="chip chip--generating"><span className="dot-status dot-status--generating"/>{jobStatus === "queued" ? "QUEUED" : `RUNNING ${jobProgress}%`}</span>
+            )}
+            {jobStatus === "failed" && (
+              <span className="chip chip--failed"><span className="dot-status dot-status--failed"/>FAILED</span>
+            )}
             <span style={{flex: 1}} />
             <div className="segmented">
               <button className="active">Compare</button>
@@ -155,27 +278,49 @@ function UpscalerWorkbench({ tool, onBack }) {
           <div className="up-canvas__stage">
             <div className="compare">
               <div className="before">
-                <Placeholder tone="violet" label="" />
-                <span className="compare__tag" style={{left: 12}}>BEFORE · 1024px</span>
+                {sourceAsset?.fileUrl ? (
+                  <img src={sourceAsset.fileUrl} alt="before" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+                ) : (
+                  <Placeholder tone="violet" label="" />
+                )}
+                <span className="compare__tag" style={{left: 12}}>BEFORE</span>
               </div>
               <div className="after">
-                <Placeholder tone="violet" label="" />
-                <span className="compare__tag" style={{right: 12}}>AFTER · {factor === "2x" ? "2048" : factor === "4x" ? "4096" : "8192"}px</span>
+                {resultUrl ? (
+                  <img src={resultUrl} alt="after" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+                ) : (
+                  <Placeholder tone="violet" label={busy ? "GENERATING…" : "AWAITING UPSCALE"} />
+                )}
+                <span className="compare__tag" style={{right: 12}}>AFTER · {factor}</span>
               </div>
               <div className="compare__handle"/>
             </div>
           </div>
           <div className="up-canvas__foot">
             <div className="up-stats">
-              <span>Source: <b>1024×1024</b></span>
-              <span>Output: <b>{factor === "2x" ? "2048×2048" : factor === "4x" ? "4096×4096" : "8192×8192"}</b></span>
-              <span>Δ Sharpness: <b style={{color:"var(--st-approved)"}}>+38%</b></span>
-              <span>Render: <b>{factor === "2x" ? "5.8s" : factor === "4x" ? "13.4s" : "37.9s"}</b></span>
+              <span>Scale: <b>{factor}</b></span>
+              <span>Face enhance: <b>{face ? "on" : "off"}</b></span>
+              {jobError && (
+                <span style={{color: "var(--st-failed)"}}>⚠ {jobError}</span>
+              )}
             </div>
             <span className="spacer" />
-            <button className="btn btn--secondary">{I.download}<span>Download</span></button>
-            <button className="btn btn--secondary">{I.save}<span>Save version</span></button>
-            <button className="btn btn--primary">{I.folder}<span>Save to project</span></button>
+            {resultUrl && (
+              <a className="btn btn--secondary" href={resultUrl} target="_blank" rel="noreferrer">
+                {I.download}<span>Open output</span>
+              </a>
+            )}
+            <button
+              className="btn btn--primary"
+              disabled={!resultAssetId}
+              onClick={() => {
+                if (!resultAssetId) return;
+                localStorage.setItem("bt_screen", "projects");
+                localStorage.setItem("bt_focus_asset", resultAssetId);
+                window.location.reload();
+              }}>
+              {I.folder}<span>Open in project</span>
+            </button>
           </div>
         </section>
       </div>
