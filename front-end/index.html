@@ -4632,41 +4632,43 @@ function ProjectMgmt() {
       {/* ── Fixed Bottom Selection Bar (v6.0) ── */}
       <div className={`asset-selection-bar ${selectedAssetIds.size > 0 ? 'asset-selection-bar--active' : ''}`}>
         <div className="asset-selection-bar__left">
-          <button className="asset-selection-bar__clear" onClick={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }} title="Clear selection">×</button>
-          <span><strong>{selectedAssetIds.size}</strong> assets selected · {selectedSizeMB} MB</span>
+          <button className="asset-selection-bar__clear" onClick={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }} title="Clear selection">✕</button>
+          <span>{selectedAssetIds.size} {selectedAssetIds.size === 1 ? 'Asset' : 'Assets'} selected · {selectedSizeMB} MB</span>
         </div>
         <div className="asset-selection-bar__actions" style={{ position: 'relative' }}>
-          <button className="asset-selection-bar__btn asset-selection-bar__btn--primary" onClick={() => setAiActionMenuOpen(p => !p)}>
-            {I.spark} Use with AI
+          {/* Dropdown triggers on click of three-dots icon */}
+          <button className="asset-selection-bar__btn" onClick={() => setAiActionMenuOpen(p => !p)} title="More actions">
+            {I.more}
           </button>
           {aiActionMenuOpen && (
-            <div className="bulk-menu">
-              <button className="bulk-menu__item" onClick={() => handleUseWithAI("upscaler", "upscale")}>
-                Image Upscaler
+            <div className="bulk-menu" style={{ bottom: '40px', right: 'auto', left: '0' }}>
+              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); handleBulkDelete(); }} style={{ color: '#f87171' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Delete
               </button>
-              <button className="bulk-menu__item" onClick={() => handleUseWithAI("editor", "edit")}>
-                Image Editor
+              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setTargetFolderId(activeFolderId); handleBulkCopy(); }}>
+                {I.save} Duplicate
               </button>
-              <button className="bulk-menu__item" onClick={() => handleUseWithAI("video-gen", "video")}>
-                Video Generator
+              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setMoveModalOpen(true); }}>
+                {I.folder} Move to
+              </button>
+              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setCopyModalOpen(true); }}>
+                {I.layers} Copy to
               </button>
             </div>
           )}
-          <button className="asset-selection-bar__btn" onClick={() => setMoveModalOpen(true)}>
-            {I.folder} Move to
-          </button>
-          <button className="asset-selection-bar__btn" onClick={() => setCopyModalOpen(true)}>
-            {I.layers} Copy to
+          
+          <button className="asset-selection-bar__btn" onClick={() => handleUseWithAI("upscaler", "upscale")}>
+            {I.spark} Use with AI
           </button>
           <button className="asset-selection-bar__btn" onClick={handleBulkDownload}>
             {I.download} Download
           </button>
-          <button className="asset-selection-bar__btn asset-selection-bar__btn--danger" onClick={handleBulkDelete}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 2 }}>
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-            Delete
+          <button className="asset-selection-bar__btn asset-selection-bar__btn--primary" onClick={() => setView("compare")}>
+            {I.eye} Compare Assets
           </button>
         </div>
       </div>
