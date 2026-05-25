@@ -3669,6 +3669,9 @@ function ProjectMgmt() {
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
 
+  // Object URL cache to prevent memory leaks
+  const objectUrlsRef = React.useRef([]);
+
   // New folder modal
   const [folderModalOpen, setFolderModalOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState('');
@@ -3681,8 +3684,21 @@ function ProjectMgmt() {
   const [reviewBusy, setReviewBusy] = React.useState(false);
   const [reviewError, setReviewError] = React.useState(null);
   const [reviewComment, setReviewComment] = React.useState('');
-  const [sendingToReview, setSendingToReview] = React.useState(false);
   const [addingComment, setAddingComment] = React.useState(false);
+
+  // Signed full preview states
+  const [previewUrl, setPreviewUrl] = React.useState(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [previewError, setPreviewError] = React.useState(null);
+
+  React.useEffect(() => {
+    return () => {
+      // Clean up object URLs on unmount
+      objectUrlsRef.current.forEach((url) => {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      });
+    };
+  }, []);
 
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
@@ -3696,13 +3712,42 @@ function ProjectMgmt() {
     setFolderModalOpen(true);
   };
 
+  const hydrateAssetThumbnails = React.useCallback(async (assetsList) => {
+    if (!assetsList || assetsList.length === 0) return;
+
+    assetsList.forEach(async (asset) => {
+      const thumbFileKey = asset.metadata?.thumbnailFileKey;
+      if (thumbFileKey && !asset.metadata?.thumbnailSignedUrl) {
+        try {
+          const signedUrl = await assetsApi.getSignedUrl(thumbFileKey);
+          setAssets((prev) =>
+            prev.map((a) =>
+              a.id === asset.id
+                ? {
+                    ...a,
+                    metadata: {
+                      ...a.metadata,
+                      thumbnailSignedUrl: signedUrl,
+                    },
+                  }
+                : a
+            )
+          );
+        } catch (err) {
+          console.warn(`[hydrateAssetThumbnails] Failed to hydrate signed URL for asset ${asset.id}:`, err);
+        }
+      }
+    });
+  }, []);
+
   const refreshAssetGrid = React.useCallback(async () => {
     if (!currentProject) return;
     try {
       const { data } = await projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId });
       setAssets(data);
+      hydrateAssetThumbnails(data);
     } catch (e) { console.warn('[refreshAssetGrid] failed:', e); }
-  }, [currentProject, activeFolderId]);
+  }, [currentProject, activeFolderId, hydrateAssetThumbnails]);
 
   const reloadAssetDetail = async (assetId) => {
     const [fullAsset, versions, reviews, comments] = await Promise.all([
@@ -3726,37 +3771,41 @@ function ProjectMgmt() {
     setReviewComment('');
     setPreviewAsset(asset); // show modal immediately with shallow data
     setReviewLoading(true);
+    setPreviewLoading(true);
+    setPreviewUrl(null);
+    setPreviewError(null);
     try {
       const detailed = await reloadAssetDetail(asset.id);
       setPreviewAsset(detailed);
+
+      const fileKey = detailed.metadata?.fileKey || (detailed.versions?.[0]?.params?.fileKey) || asset.metadata?.fileKey;
+      if (fileKey) {
+        try {
+          const signedUrl = await assetsApi.getSignedUrl(fileKey);
+          setPreviewUrl(signedUrl);
+        } catch (signedErr) {
+          console.warn('[handleOpenAsset] Failed to load signed URL:', signedErr);
+          setPreviewUrl(resolveFileUrl(detailed.fileUrl || asset.fileUrl));
+        }
+      } else {
+        setPreviewUrl(resolveFileUrl(detailed.fileUrl || asset.fileUrl));
+      }
     } catch (err) {
       setReviewError(err?.message || 'Failed to load asset details');
     } finally {
       setReviewLoading(false);
+      setPreviewLoading(false);
     }
   };
 
   const handleClosePreview = () => {
-    if (reviewBusy || sendingToReview || addingComment) return;
+    if (reviewBusy || addingComment) return;
     setPreviewAsset(null);
     setReviewError(null);
     setReviewComment('');
-  };
-
-  const handleSendToReview = async () => {
-    if (!previewAsset) return;
-    setSendingToReview(true);
-    setReviewError(null);
-    try {
-      await assetsApi.sendToReview(previewAsset.id);
-      const detailed = await reloadAssetDetail(previewAsset.id);
-      setPreviewAsset(detailed);
-      refreshAssetGrid();
-    } catch (err) {
-      setReviewError(err?.message || 'Send to review failed');
-    } finally {
-      setSendingToReview(false);
-    }
+    setPreviewUrl(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
   };
 
   const handleAddComment = async () => {
@@ -3837,14 +3886,43 @@ function ProjectMgmt() {
     setUploading(true);
     setUploadProgress(0);
 
+    let localThumbnailUrl = null;
+    if (file.type.startsWith('image/')) {
+      localThumbnailUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.push(localThumbnailUrl);
+    }
+
+    const optimisticId = `optimistic_${Date.now()}`;
+    const optimisticAsset = {
+      id: optimisticId,
+      name: file.name,
+      status: "DRAFT",
+      currentVersion: 1,
+      mimeType: file.type,
+      fileSizeBytes: file.size,
+      localThumbnailUrl,
+      isUploading: true,
+      comments: 0,
+      creator: { name: 'You' },
+      createdAt: new Date().toISOString(),
+    };
+
+    setAssets((prev) => [optimisticAsset, ...prev]);
+
     try {
       const newAsset = await assetsApi.uploadAsset(currentProject.id, activeFolderId, file, (pct) => {
         setUploadProgress(pct);
       });
-      setAssets((prev) => [newAsset, ...prev]);
+
+      if (localThumbnailUrl) {
+        newAsset.localThumbnailUrl = localThumbnailUrl;
+      }
+
+      setAssets((prev) => prev.map(a => a.id === optimisticId ? newAsset : a));
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to upload file");
+      setAssets((prev) => prev.filter(a => a.id !== optimisticId));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -3910,10 +3988,11 @@ function ProjectMgmt() {
       .then(({ data, fromCache }) => {
         setOffline(fromCache);
         setAssets(data);
+        hydrateAssetThumbnails(data);
       })
       .catch(() => setOffline(true))
       .finally(() => setLoading(false));
-  }, [currentProject, activeFolderId]);
+  }, [currentProject, activeFolderId, hydrateAssetThumbnails]);
 
   // Build the unified sidebar tree list dynamically
   const dynamicTree = React.useMemo(() => {
@@ -4170,11 +4249,13 @@ function ProjectMgmt() {
                   title="Open asset review"
                   style={{ cursor: 'pointer' }}>
                   <div className="asset-card__thumb">
-                    {a.fileUrl ? (
-                      <img src={resolveFileUrl(a.fileUrl)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />
-                    )}
+                    {(() => {
+                      const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
+                      if (thumbSrc) {
+                        return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />;
+                      }
+                      return <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />;
+                    })()}
                   </div>
                   <div className="asset-card__body">
                     <div className="asset-card__title-row">
@@ -4255,15 +4336,16 @@ function ProjectMgmt() {
           asset={previewAsset}
           loading={reviewLoading}
           busy={reviewBusy}
-          sending={sendingToReview}
           addingComment={addingComment}
           comment={reviewComment}
           setComment={setReviewComment}
           error={reviewError}
           onClose={handleClosePreview}
-          onSendToReview={handleSendToReview}
           onAddComment={handleAddComment}
           onReviewAction={handleReviewAction}
+          previewUrl={previewUrl}
+          previewLoading={previewLoading}
+          previewError={previewError}
         />
       )}
     </div>
@@ -4296,11 +4378,13 @@ function AssetList({ assets, onSelect }) {
         return (
           <div className="asset-table__row" key={a.id || i} onClick={() => onSelect?.(a)} style={{ cursor: 'pointer' }}>
             <div className="asset-table__thumb">
-              {a.fileUrl ? (
-                <img src={resolveFileUrl(a.fileUrl)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
-              )}
+              {(() => {
+                const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
+                if (thumbSrc) {
+                  return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />;
+                }
+                return <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />;
+              })()}
             </div>
             <div style={{display:"flex", flexDirection:"column", gap: 2, minWidth: 0}}>
               <span className="asset-table__name" title={a.name}>{a.name}</span>
@@ -4358,11 +4442,13 @@ function AssetCompare({ assets, onSelect }) {
           title="Open asset review"
           style={{ cursor: 'pointer' }}
         >
-          {asset.fileUrl ? (
-            <img src={resolveFileUrl(asset.fileUrl)} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-          ) : (
-            <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />
-          )}
+          {(() => {
+            const thumbSrc = asset.localThumbnailUrl || asset.thumbnailUrl || asset.metadata?.thumbnailUrl || asset.metadata?.thumbnailSignedUrl || "";
+            if (thumbSrc) {
+              return <img src={resolveFileUrl(thumbSrc)} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
+            }
+            return <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />;
+          })()}
         </div>
         <dl className="asset-compare__meta">
           <dt>Resolution</dt><dd>{RES[idx % RES.length]}</dd>
@@ -4427,14 +4513,14 @@ function AssetCompare({ assets, onSelect }) {
 //  Asset Review Modal
 // ─────────────────────────────────────────────
 function AssetReviewModal({
-  asset, loading, busy, sending, addingComment,
+  asset, loading, busy, addingComment,
   comment, setComment, error,
-  onClose, onSendToReview, onAddComment, onReviewAction,
+  onClose, onAddComment, onReviewAction,
+  previewUrl, previewLoading, previewError,
 }) {
   console.log("[AssetReviewModal] render", asset.id);
   const status = asset.status || 'DRAFT';
   const [chipCls, chipLabel] = STATUS[status] ?? ['chip chip--draft', status];
-  const canSendToReview = status === 'DRAFT' || status === 'WIP' || status === 'REVISION_REQUESTED';
   const canDecide = status === 'IN_REVIEW';
 
   const fmtBytes = (b) => b ? `${(b / 1024 / 1024).toFixed(2)} MB` : '—';
@@ -4463,10 +4549,27 @@ function AssetReviewModal({
           background: 'var(--bg-canvas-2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           minHeight: 480, padding: 24, overflow: 'auto',
+          position: 'relative',
         }}>
-          {asset.fileUrl ? (
-            <img src={resolveFileUrl(asset.fileUrl)} alt={asset.name}
-              style={{ maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />
+          {previewLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div className="spinner" style={{ width: 28, height: 28, border: '2px solid var(--line)', borderTopColor: 'var(--primary)', borderRadius: '50%' }}></div>
+              <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 11 }}>Loading preview…</div>
+            </div>
+          ) : previewError ? (
+            <div style={{ color: 'var(--st-failed)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>{previewError}</div>
+          ) : previewUrl ? (
+            (() => {
+              const mime = asset.mimeType || '';
+              if (mime.startsWith('video/')) {
+                return <video src={previewUrl} controls style={{ maxWidth: '100%', maxHeight: '82vh', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />;
+              } else if (mime.startsWith('audio/')) {
+                return <audio src={previewUrl} controls style={{ width: '80%' }} />;
+              } else {
+                return <img src={previewUrl} alt={asset.name}
+                  style={{ maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />;
+              }
+            })()
           ) : (
             <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>No preview available</div>
           )}
@@ -4489,7 +4592,7 @@ function AssetReviewModal({
                 {loading && <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>loading…</span>}
               </div>
             </div>
-            <button className="icon-btn icon-btn--light" onClick={onClose} title="Close (Esc)" disabled={busy || sending || addingComment}>×</button>
+            <button className="icon-btn icon-btn--light" onClick={onClose} title="Close (Esc)" disabled={busy || addingComment}>×</button>
           </div>
 
           {/* Metadata */}
@@ -4504,8 +4607,8 @@ function AssetReviewModal({
             <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{fmtDate(asset.createdAt)}</dd>
           </dl>
 
-          {asset.fileUrl && (
-            <a href={resolveFileUrl(asset.fileUrl)} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
+          {previewUrl && (
+            <a href={previewUrl} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
               Open in new tab
             </a>
           )}
@@ -4599,12 +4702,7 @@ function AssetReviewModal({
             marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--line-2)',
             display: 'flex', flexDirection: 'column', gap: 8,
           }}>
-            {canSendToReview && (
-              <button className="btn btn--primary" disabled={sending} onClick={onSendToReview}>
-                {sending ? 'Sending…' : 'Send to Review'}
-              </button>
-            )}
-            {canDecide && (
+            {canDecide ? (
               <>
                 <button className="btn btn--primary" disabled={busy} onClick={() => onReviewAction('approve')}>
                   {busy ? '…' : 'Approve'}
@@ -4618,10 +4716,9 @@ function AssetReviewModal({
                   </button>
                 </div>
               </>
-            )}
-            {!canSendToReview && !canDecide && (
+            ) : (
               <div style={{ fontSize: 12, color: 'var(--ink-4)', textAlign: 'center', padding: '8px 0' }}>
-                Status: <strong>{chipLabel}</strong> — no actions available
+                Status: <strong>{chipLabel}</strong> — {status === 'DRAFT' || status === 'WIP' ? 'Draft asset — no review action available.' : 'no actions available'}
               </div>
             )}
           </div>

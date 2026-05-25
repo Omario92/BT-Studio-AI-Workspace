@@ -51,12 +51,93 @@ async function requestRevision(versionId, comment) {
   return data.review;
 }
 
+async function getSignedUrl(fileKey) {
+  const { data } = await apiClient.get(`/api/storage/signed-url?fileKey=${encodeURIComponent(fileKey)}`);
+  return data.fileUrl;
+}
+
+async function createLocalImageThumbnail(file) {
+  if (!file.type.startsWith('image/')) {
+    return { localThumbnailUrl: null, thumbnailBlob: null, thumbnailFileName: null };
+  }
+
+  const localThumbnailUrl = URL.createObjectURL(file);
+
+  try {
+    const blob = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const MAX_WIDTH = 480;
+        const MAX_HEIGHT = 320;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to get 2D canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('Canvas toBlob failed'));
+        }, 'image/webp', 0.85);
+      };
+      img.onerror = () => reject(new Error('Image loading failed'));
+      img.src = localThumbnailUrl;
+    });
+
+    const originalName = file.name;
+    const dotIdx = originalName.lastIndexOf('.');
+    const baseName = dotIdx !== -1 ? originalName.slice(0, dotIdx) : originalName;
+    const thumbnailFileName = `thumb_${baseName}.webp`;
+
+    return {
+      localThumbnailUrl,
+      thumbnailBlob: blob,
+      thumbnailFileName,
+    };
+  } catch (err) {
+    console.warn('[createLocalImageThumbnail] Failed, fallback to original object URL:', err);
+    return {
+      localThumbnailUrl,
+      thumbnailBlob: null,
+      thumbnailFileName: null,
+    };
+  }
+}
+
 async function uploadAsset(projectId, folderId, file, onProgress) {
-  // 1. Get presigned upload URL
-  console.log(`[uploadAsset] Step 1: presign — project=${projectId}, file=${file.name}`);
+  const assetId = `ast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  // 1. Create local thumbnail
+  let thumbData = { localThumbnailUrl: null, thumbnailBlob: null, thumbnailFileName: null };
+  if (file.type.startsWith('image/')) {
+    thumbData = await createLocalImageThumbnail(file);
+  }
+
+  // 2. Get presigned upload URL for main file
+  console.log(`[uploadAsset] Step 1: presign main — project=${projectId}, file=${file.name}`);
   const { data: presign } = await apiClient.post('/api/storage/presign-upload', {
     projectId,
-    assetId: `ast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    assetId,
     versionNumber: 1,
     filename: file.name,
     mimeType: file.type,
@@ -65,32 +146,34 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
 
   const { uploadUrl, fileKey } = presign;
 
-  // Self-heal: If uploadUrl contains localhost but browser is NOT on localhost, rewrite it to use production backend
-  let finalUploadUrl = uploadUrl;
-  if (uploadUrl.startsWith('http://localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
-    try {
-      const urlObj = new URL(uploadUrl);
-      const apiBaseUrl = apiClient.baseUrl || 'https://bt-studio-ai-backend.up.railway.app';
-      const apiBaseObj = new URL(apiBaseUrl);
-      urlObj.protocol = apiBaseObj.protocol;
-      urlObj.host = apiBaseObj.host;
-      finalUploadUrl = urlObj.toString();
-      console.log(`[assetsApi] Patched local upload URL to production host: ${finalUploadUrl}`);
-    } catch (e) {
-      console.error('[assetsApi] Failed to patch local upload URL:', e);
+  const resolveUploadUrl = (url) => {
+    if (url.startsWith('http://localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+      try {
+        const urlObj = new URL(url);
+        const apiBaseUrl = apiClient.baseUrl || 'https://bt-studio-ai-backend.up.railway.app';
+        const apiBaseObj = new URL(apiBaseUrl);
+        urlObj.protocol = apiBaseObj.protocol;
+        urlObj.host = apiBaseObj.host;
+        return urlObj.toString();
+      } catch (e) {
+        console.error('[assetsApi] Failed to patch local upload URL:', e);
+      }
     }
-  }
+    return url;
+  };
 
-  console.log(`[uploadAsset] Step 2: PUT upload — url=${finalUploadUrl}, key=${fileKey}`);
-  // 2. Upload raw file binary via PUT
+  const finalUploadUrl = resolveUploadUrl(uploadUrl);
+
+  // 3. Upload main file binary via PUT
+  console.log(`[uploadAsset] Step 2: PUT main upload — url=${finalUploadUrl}`);
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', finalUploadUrl, true);
     xhr.setRequestHeader('Content-Type', file.type);
 
-    if (xhr.upload) {
+    if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable && onProgress) {
+        if (e.lengthComputable) {
           const pct = Math.round((e.loaded * 100) / e.total);
           onProgress(pct);
         }
@@ -102,19 +185,66 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
         resolve();
       } else {
         const detail = xhr.responseText ? ` — ${xhr.responseText.slice(0, 200)}` : '';
-        reject(new Error(`[PUT upload] Failed with status ${xhr.status}${detail}`));
+        reject(new Error(`[PUT upload] Main failed with status ${xhr.status}${detail}`));
       }
     };
 
-    xhr.onerror = () => reject(new Error('[PUT upload] Network error during file upload'));
+    xhr.onerror = () => reject(new Error('[PUT upload] Network error during main file upload'));
     xhr.send(file);
   });
 
-  // 3. Confirm completion
-  console.log(`[uploadAsset] Step 3: complete-upload — key=${fileKey}`);
+  // Complete main upload
+  console.log(`[uploadAsset] Step 2.1: complete-upload — key=${fileKey}`);
   const { data: completion } = await apiClient.post('/api/storage/complete-upload', { fileKey });
 
-  // 4. Register Asset + Version v1 in database
+  // 4. Upload thumbnail if available
+  let thumbnailFileKey = null;
+  let thumbnailUrl = null;
+
+  if (thumbData.thumbnailBlob) {
+    try {
+      console.log(`[uploadAsset] Step 3: presign thumbnail — filename=${thumbData.thumbnailFileName}`);
+      const { data: thumbPresign } = await apiClient.post('/api/storage/presign-upload', {
+        projectId,
+        assetId,
+        versionNumber: 1,
+        filename: thumbData.thumbnailFileName,
+        mimeType: thumbData.thumbnailBlob.type,
+        fileSizeBytes: thumbData.thumbnailBlob.size,
+      });
+
+      const finalThumbUploadUrl = resolveUploadUrl(thumbPresign.uploadUrl);
+
+      console.log(`[uploadAsset] Step 3.1: PUT thumbnail upload — url=${finalThumbUploadUrl}`);
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', finalThumbUploadUrl, true);
+        xhr.setRequestHeader('Content-Type', thumbData.thumbnailBlob.type);
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`[PUT upload] Thumbnail failed with status ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('[PUT upload] Network error during thumbnail upload'));
+        xhr.send(thumbData.thumbnailBlob);
+      });
+
+      console.log(`[uploadAsset] Step 3.2: complete-upload thumbnail — key=${thumbPresign.fileKey}`);
+      const { data: thumbCompletion } = await apiClient.post('/api/storage/complete-upload', { fileKey: thumbPresign.fileKey });
+
+      thumbnailFileKey = thumbPresign.fileKey;
+      thumbnailUrl = thumbCompletion.fileUrl;
+      console.log(`[uploadAsset] Thumbnail successfully uploaded to Cloudflare R2: ${thumbnailUrl}`);
+    } catch (err) {
+      console.error('[uploadAsset] Thumbnail upload failed, proceeding without R2 thumbnail:', err);
+    }
+  }
+
+  // 5. Register Asset in database with both main and thumbnail keys in metadata
   console.log(`[uploadAsset] Step 4: assets/upload — fileUrl=${completion.fileUrl}`);
   const { data: assetData } = await apiClient.post('/api/assets/upload', {
     projectId,
@@ -124,15 +254,24 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
     fileSizeBytes: file.size,
     fileKey,
     fileUrl: completion.fileUrl,
-    metadata: {},
+    metadata: {
+      fileKey,
+      thumbnailFileKey,
+      thumbnailUrl,
+      originalFileName: file.name,
+    },
   });
 
-  return assetData.asset;
+  return {
+    ...assetData.asset,
+    localThumbnailUrl: thumbData.localThumbnailUrl,
+    thumbnailUrl: thumbData.localThumbnailUrl || thumbnailUrl,
+  };
 }
 
 const assetsApi = {
   getAsset, getAssetVersions, getAssetReviews, getAssetComments,
   addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
-  uploadAsset,
+  uploadAsset, getSignedUrl,
 };
 window.assetsApi = assetsApi;
