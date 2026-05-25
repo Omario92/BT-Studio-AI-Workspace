@@ -50,6 +50,7 @@ function ProjectMgmt() {
 
   const handleOpenFolderModal = () => {
     if (!currentProject) return;
+    console.log("[ProjectFiles] New folder clicked");
     setNewFolderName('');
     setFolderError(null);
     setFolderModalOpen(true);
@@ -80,6 +81,7 @@ function ProjectMgmt() {
   };
 
   const handleOpenAsset = async (asset) => {
+    console.log("[AssetGrid] Open asset", asset.id);
     setReviewError(null);
     setReviewComment('');
     setPreviewAsset(asset); // show modal immediately with shallow data
@@ -351,7 +353,15 @@ function ProjectMgmt() {
       <aside className="pm__tree">
         <div className="tree__header">
           <h3>Project Files</h3>
-          <button className="icon-btn icon-btn--light" title="New folder" onClick={handleOpenFolderModal}>{I.plus}</button>
+          <button
+            className="icon-btn"
+            type="button"
+            onClick={handleOpenFolderModal}
+            title="New Folder"
+            aria-label="New Folder"
+          >
+            {I.plus}
+          </button>
           <button
             className="icon-btn icon-btn--light"
             title="Hide file tree"
@@ -549,7 +559,7 @@ function ProjectMgmt() {
         ) : view === "list" ? (
           <AssetList assets={assets} onSelect={handleOpenAsset} />
         ) : (
-          <AssetCompare assets={assets} />
+          <AssetCompare assets={assets} onSelect={handleOpenAsset} />
         )}
       </div>
 
@@ -672,7 +682,7 @@ function AssetList({ assets, onSelect }) {
   );
 }
 
-function AssetCompare({ assets }) {
+function AssetCompare({ assets, onSelect }) {
   const [left, setLeft]   = React.useState(0);
   const [right, setRight] = React.useState(Math.min(assets.length - 1, 1));
   
@@ -700,7 +710,14 @@ function AssetCompare({ assets }) {
           <span className="chip chip--version">v{versionNumber}</span>
           <span className={cls}>{label}</span>
         </div>
-        <div className="asset-compare__art">
+        <div
+          className="asset-compare__art"
+          onClick={() => onSelect?.(asset)}
+          tabIndex={0}
+          role="button"
+          title="Open asset review"
+          style={{ cursor: 'pointer' }}
+        >
           {asset.fileUrl ? (
             <img src={asset.fileUrl} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           ) : (
@@ -774,6 +791,7 @@ function AssetReviewModal({
   comment, setComment, error,
   onClose, onSendToReview, onAddComment, onReviewAction,
 }) {
+  console.log("[AssetReviewModal] render", asset.id);
   const status = asset.status || 'DRAFT';
   const [chipCls, chipLabel] = STATUS[status] ?? ['chip chip--draft', status];
   const canSendToReview = status === 'DRAFT' || status === 'WIP' || status === 'REVISION_REQUESTED';
