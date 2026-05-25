@@ -35,6 +35,11 @@ function ProjectMgmt() {
   const [folderCreating, setFolderCreating] = React.useState(false);
   const [folderError, setFolderError] = React.useState(null);
 
+  // Asset preview / review modal
+  const [previewAsset, setPreviewAsset] = React.useState(null);
+  const [reviewBusy, setReviewBusy] = React.useState(false);
+  const [reviewError, setReviewError] = React.useState(null);
+
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
   };
@@ -44,6 +49,49 @@ function ProjectMgmt() {
     setNewFolderName('');
     setFolderError(null);
     setFolderModalOpen(true);
+  };
+
+  const handleOpenAsset = (asset) => {
+    setReviewError(null);
+    setPreviewAsset(asset);
+  };
+
+  const handleClosePreview = () => {
+    if (reviewBusy) return;
+    setPreviewAsset(null);
+    setReviewError(null);
+  };
+
+  const handleReviewAction = async (action) => {
+    if (!previewAsset) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      // Get the latest version id from the asset (fetch versions first)
+      const versions = await assetsApi.getAssetVersions(previewAsset.id);
+      const latest = versions?.[0];
+      if (!latest) throw new Error('No asset version found to review');
+
+      const comment = action === 'approve' ? '' :
+        window.prompt(action === 'reject' ? 'Reason for rejection?' : 'What revisions are needed?') ?? '';
+      if ((action === 'reject' || action === 'request-revision') && !comment.trim()) {
+        setReviewBusy(false);
+        return; // user cancelled
+      }
+
+      if (action === 'approve')          await assetsApi.approveVersion(latest.id, comment);
+      else if (action === 'reject')      await assetsApi.rejectVersion(latest.id, comment);
+      else if (action === 'request-revision') await assetsApi.requestRevision(latest.id, comment);
+
+      // Refresh asset grid + close
+      const { data: refreshed } = await projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId });
+      setAssets(refreshed);
+      setPreviewAsset(null);
+    } catch (err) {
+      setReviewError(err?.message || 'Review action failed');
+    } finally {
+      setReviewBusy(false);
+    }
   };
 
   const handleCreateFolder = async () => {
@@ -387,7 +435,7 @@ function ProjectMgmt() {
               const creatorName = a.creator?.name ?? "System";
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
-                <div className="asset-card" key={a.id || i}>
+                <div className="asset-card" key={a.id || i} onClick={() => handleOpenAsset(a)} style={{ cursor: 'pointer' }}>
                   <div className="asset-card__thumb">
                     {a.fileUrl ? (
                       <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -416,7 +464,7 @@ function ProjectMgmt() {
             })}
           </div>
         ) : view === "list" ? (
-          <AssetList assets={assets} />
+          <AssetList assets={assets} onSelect={handleOpenAsset} />
         ) : (
           <AssetCompare assets={assets} />
         )}
@@ -424,44 +472,156 @@ function ProjectMgmt() {
 
       {/* ── New Folder Modal ── */}
       {folderModalOpen && (
-      <div
-        style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.55)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-        onClick={() => setFolderModalOpen(false)}>
         <div
           style={{
-            background: 'var(--surface)', border: '1px solid var(--line)',
-            borderRadius: 10, padding: '28px 28px 24px', width: 360,
-            display: 'flex', flexDirection: 'column', gap: 16,
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(13,15,18,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
-          onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: 0, fontSize: 15 }}>New Folder</h3>
-          <input
-            autoFocus
-            type="text"
-            className="input"
-            placeholder="Folder name"
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setFolderModalOpen(false); }}
-            style={{ width: '100%', boxSizing: 'border-box' }}
-          />
-          {folderError && (
-            <div style={{ fontSize: 12, color: 'var(--st-rejected, #f87171)' }}>{folderError}</div>
-          )}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="btn btn--ghost" onClick={() => setFolderModalOpen(false)} disabled={folderCreating}>
-              Cancel
-            </button>
-            <button className="btn btn--primary" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
-              {folderCreating ? 'Creating…' : 'Create Folder'}
-            </button>
+          onClick={() => setFolderModalOpen(false)}>
+          <div
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid var(--line)',
+              borderRadius: 12,
+              padding: '24px 24px 20px',
+              width: 380,
+              display: 'flex', flexDirection: 'column', gap: 14,
+              boxShadow: '0 20px 50px rgba(13,15,18,0.20), 0 2px 6px rgba(13,15,18,0.06)',
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New Folder</h3>
+            <input
+              autoFocus
+              type="text"
+              className="input"
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setFolderModalOpen(false); }}
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+            {folderError && (
+              <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>{folderError}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="btn btn--ghost" onClick={() => setFolderModalOpen(false)} disabled={folderCreating}>
+                Cancel
+              </button>
+              <button className="btn btn--primary" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
+                {folderCreating ? 'Creating…' : 'Create Folder'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Asset Preview / Review Modal ── */}
+      {previewAsset && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(13,15,18,0.72)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 32,
+          }}
+          onClick={handleClosePreview}>
+          <div
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid var(--line)',
+              borderRadius: 14,
+              width: '100%',
+              maxWidth: 1100,
+              maxHeight: '90vh',
+              display: 'grid',
+              gridTemplateColumns: '1fr 320px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(13,15,18,0.30)',
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* Left: full-size preview */}
+            <div style={{
+              background: 'var(--bg-canvas-2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: 480, padding: 24, overflow: 'auto',
+            }}>
+              {previewAsset.fileUrl ? (
+                <img src={previewAsset.fileUrl} alt={previewAsset.name}
+                  style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />
+              ) : (
+                <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>No preview available</div>
+              )}
+            </div>
+
+            {/* Right: metadata + actions */}
+            <div style={{
+              padding: '22px 22px 18px',
+              display: 'flex', flexDirection: 'column', gap: 14,
+              borderLeft: '1px solid var(--line)',
+              overflow: 'auto',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{previewAsset.name}</h3>
+                  <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="chip chip--version">v{previewAsset.currentVersion ?? 1}</span>
+                    <span className={STATUS[previewAsset.status || 'DRAFT']?.[0] ?? 'chip chip--draft'}>
+                      {STATUS[previewAsset.status || 'DRAFT']?.[1] ?? previewAsset.status}
+                    </span>
+                  </div>
+                </div>
+                <button className="icon-btn icon-btn--light" onClick={handleClosePreview} title="Close" disabled={reviewBusy}>
+                  {I.close ?? '×'}
+                </button>
+              </div>
+
+              <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: '88px 1fr', gap: '6px 12px', fontSize: 12.5 }}>
+                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Type</dt>
+                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset.mimeType ?? '—'}</dd>
+                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Size</dt>
+                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>
+                  {previewAsset.fileSizeBytes ? `${(previewAsset.fileSizeBytes / 1024 / 1024).toFixed(2)} MB` : '—'}
+                </dd>
+                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Creator</dt>
+                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset.creator?.name ?? '—'}</dd>
+                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Comments</dt>
+                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset._count?.comments ?? 0}</dd>
+              </dl>
+
+              {previewAsset.fileUrl && (
+                <a href={previewAsset.fileUrl} target="_blank" rel="noreferrer"
+                  className="btn btn--secondary"
+                  style={{ justifyContent: 'center' }}>
+                  Open in new tab
+                </a>
+              )}
+
+              <div style={{
+                marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--line-2)',
+                display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.10em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
+                  Review
+                </div>
+                {reviewError && (
+                  <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>{reviewError}</div>
+                )}
+                <button className="btn btn--primary" disabled={reviewBusy} onClick={() => handleReviewAction('approve')}>
+                  {reviewBusy ? '…' : 'Approve'}
+                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn--secondary" style={{ flex: 1 }} disabled={reviewBusy} onClick={() => handleReviewAction('request-revision')}>
+                    Request revision
+                  </button>
+                  <button className="btn btn--secondary" style={{ flex: 1, color: 'var(--st-failed)', borderColor: 'var(--st-failed-bg)' }} disabled={reviewBusy} onClick={() => handleReviewAction('reject')}>
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -470,7 +630,7 @@ function ProjectMgmt() {
 const SIZES = ["1.2 MB", "3.8 MB", "5.1 MB", "820 KB", "2.4 MB", "7.2 MB", "4.6 MB", "1.9 MB"];
 const RES   = ["2048×2048", "1920×1080", "4096×4096", "1024×1024", "1080×1920", "3840×2160"];
 
-function AssetList({ assets }) {
+function AssetList({ assets, onSelect }) {
   return (
     <div className="asset-table">
       <div className="asset-table__head">
@@ -491,7 +651,7 @@ function AssetList({ assets }) {
         const creatorName = a.creator?.name ?? "System";
         const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
         return (
-          <div className="asset-table__row" key={a.id || i}>
+          <div className="asset-table__row" key={a.id || i} onClick={() => onSelect?.(a)} style={{ cursor: 'pointer' }}>
             <div className="asset-table__thumb">
               {a.fileUrl ? (
                 <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
