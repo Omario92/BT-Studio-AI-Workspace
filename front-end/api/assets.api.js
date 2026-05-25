@@ -43,12 +43,14 @@ async function requestRevision(versionId, comment) {
 
 async function uploadAsset(projectId, folderId, file, onProgress) {
   // 1. Get presigned upload URL
+  console.log(`[uploadAsset] Step 1: presign — project=${projectId}, file=${file.name}`);
   const { data: presign } = await apiClient.post('/api/storage/presign-upload', {
     projectId,
     assetId: `ast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     versionNumber: 1,
     filename: file.name,
     mimeType: file.type,
+    fileSizeBytes: file.size,
   });
 
   const { uploadUrl, fileKey } = presign;
@@ -69,6 +71,7 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
     }
   }
 
+  console.log(`[uploadAsset] Step 2: PUT upload — url=${finalUploadUrl}, key=${fileKey}`);
   // 2. Upload raw file binary via PUT
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -88,18 +91,21 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(`Upload failed with status ${xhr.status}`));
+        const detail = xhr.responseText ? ` — ${xhr.responseText.slice(0, 200)}` : '';
+        reject(new Error(`[PUT upload] Failed with status ${xhr.status}${detail}`));
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during file upload'));
+    xhr.onerror = () => reject(new Error('[PUT upload] Network error during file upload'));
     xhr.send(file);
   });
 
   // 3. Confirm completion
+  console.log(`[uploadAsset] Step 3: complete-upload — key=${fileKey}`);
   const { data: completion } = await apiClient.post('/api/storage/complete-upload', { fileKey });
 
   // 4. Register Asset + Version v1 in database
+  console.log(`[uploadAsset] Step 4: assets/upload — fileUrl=${completion.fileUrl}`);
   const { data: assetData } = await apiClient.post('/api/assets/upload', {
     projectId,
     folderId,

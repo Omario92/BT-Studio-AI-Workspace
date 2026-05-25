@@ -97,5 +97,23 @@ async function getProjectAssets(projectId, { folderId, status, page = 1, limit =
   }
 }
 
-const projectsApi = { listProjects, getProject, getProjectFolders, getProjectAssets };
+async function createFolder(projectId, { name, parentId } = {}) {
+  const { data } = await apiClient.post(`/api/projects/${projectId}/folders`, { name, parentId });
+  return { data: data.folder, fromCache: false };
+}
+
+async function renameFolder(folderId, { name }) {
+  const { data } = await apiClient.patch(`/api/folders/${folderId}`, { name });
+  return { data: data.folder, fromCache: false };
+}
+
+async function deleteFolder(folderId, { force = false } = {}) {
+  await apiClient.delete(`/api/folders/${folderId}?force=${force}`);
+  return { fromCache: false };
+}
+
+const projectsApi = {
+  listProjects, getProject, getProjectFolders, getProjectAssets,
+  createFolder, renameFolder, deleteFolder,
+};
 window.projectsApi = projectsApi;
