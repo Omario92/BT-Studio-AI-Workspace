@@ -5,6 +5,7 @@ import {
   addComment,
   sendToReview, approveVersion, rejectVersion, requestRevision,
   getVersion, getReviews, getComments,
+  bulkDeleteAssets, bulkMoveAssets, bulkCopyAssets, bulkDownloadAssets, useAssetsWithAI,
 } from './assets.service';
 
 export async function assetRoutes(fastify: FastifyInstance) {
@@ -151,6 +152,117 @@ export async function assetRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const comments = await getComments(id);
     return reply.send({ comments });
+  });
+
+  // POST /assets/bulk-delete
+  fastify.post('/bulk-delete', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Bulk delete assets',
+      body: {
+        type: 'object',
+        required: ['assetIds'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { assetIds } = req.body as { assetIds: string[] };
+    const result = await bulkDeleteAssets(assetIds, userId);
+    return reply.send(result);
+  });
+
+  // POST /assets/bulk-move
+  fastify.post('/bulk-move', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Bulk move assets to another folder',
+      body: {
+        type: 'object',
+        required: ['assetIds', 'targetFolderId'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } },
+          targetFolderId: { type: 'string' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { assetIds, targetFolderId } = req.body as { assetIds: string[], targetFolderId: string };
+    const assets = await bulkMoveAssets(assetIds, targetFolderId, userId);
+    return reply.send({ assets });
+  });
+
+  // POST /assets/bulk-copy
+  fastify.post('/bulk-copy', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Bulk copy assets to another folder',
+      body: {
+        type: 'object',
+        required: ['assetIds', 'targetFolderId'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } },
+          targetFolderId: { type: 'string' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { assetIds, targetFolderId } = req.body as { assetIds: string[], targetFolderId: string };
+    const assets = await bulkCopyAssets(assetIds, targetFolderId, userId);
+    return reply.status(201).send({ assets });
+  });
+
+  // POST /assets/bulk-download
+  fastify.post('/bulk-download', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Bulk download assets signed URLs',
+      body: {
+        type: 'object',
+        required: ['assetIds'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { assetIds } = req.body as { assetIds: string[] };
+    const result = await bulkDownloadAssets(assetIds, userId);
+    return reply.send(result);
+  });
+
+  // POST /assets/use-with-ai
+  fastify.post('/use-with-ai', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Trigger AI job or batch on assets',
+      body: {
+        type: 'object',
+        required: ['assetIds', 'projectId', 'toolId', 'jobType', 'mode'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } },
+          projectId: { type: 'string' },
+          toolId: { type: 'string' },
+          jobType: { type: 'string' },
+          mode: { type: 'string', enum: ['single', 'batch'] }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const body = req.body as any;
+    const result = await useAssetsWithAI(body.assetIds, body, userId);
+    return reply.status(201).send(result);
   });
 }
 

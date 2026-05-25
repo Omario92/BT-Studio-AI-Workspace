@@ -367,10 +367,36 @@ async function deleteAsset(id) {
   await apiClient.delete(`/api/assets/${id}`);
 }
 
+async function bulkDelete(assetIds) {
+  const { data } = await apiClient.post('/api/assets/bulk-delete', { assetIds });
+  return data;
+}
+
+async function bulkMove(assetIds, targetFolderId) {
+  const { data } = await apiClient.post('/api/assets/bulk-move', { assetIds, targetFolderId });
+  return data.assets;
+}
+
+async function bulkCopy(assetIds, targetFolderId) {
+  const { data } = await apiClient.post('/api/assets/bulk-copy', { assetIds, targetFolderId });
+  return data.assets;
+}
+
+async function bulkDownload(assetIds) {
+  const { data } = await apiClient.post('/api/assets/bulk-download', { assetIds });
+  return data.files;
+}
+
+async function useWithAI(assetIds, { projectId, toolId, jobType, mode }) {
+  const { data } = await apiClient.post('/api/assets/use-with-ai', { assetIds, projectId, toolId, jobType, mode });
+  return data;
+}
+
 const assetsApi = {
   getAsset, getAssetVersions, getAssetReviews, getAssetComments,
   addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
   uploadAsset, getSignedUrl, deleteAsset,
+  bulkDelete, bulkMove, bulkCopy, bulkDownload, useWithAI,
 };
 window.assetsApi = assetsApi;
 

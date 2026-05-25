@@ -59,6 +59,15 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
   const [railCollapsed, setRailCollapsed] = React.useState(() => {
     try { return localStorage.getItem("bt_rail") === "1"; } catch (e) { return false; }
   });
+  // Read assets pre-selected for AI
+  const [selectedForAI, setSelectedForAI] = React.useState(() => {
+    try {
+      const data = localStorage.getItem("bt_selected_assets_for_ai");
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   // Live tools from API (falls back to static TOOLS)
   const [tools, setTools] = React.useState(typeof TOOLS !== "undefined" ? TOOLS : []);
   // Live recent jobs from API (falls back to RECENT_JOBS)
@@ -181,6 +190,62 @@ function WorkspaceHome({ pinned, onPin, onOpen, onSwitchScreen }) {
             </p>
           </div>
         </div>
+
+        {selectedForAI && selectedForAI.assets && selectedForAI.assets.length > 0 && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)",
+            border: "1px solid rgba(59, 130, 246, 0.2)",
+            borderRadius: 12,
+            padding: "16px 20px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: "50%",
+                background: "rgba(59, 130, 246, 0.15)",
+                display: "flex", alignItems: "center",
+                justifyContent: "center", color: "var(--accent)"
+              }}>
+                {I.spark}
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#fff" }}>Selected from Projects</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--ink-on-dark-3, #a1a1aa)" }}>
+                  <strong>{selectedForAI.assets.length}</strong> assets loaded from project. Pre-load them to start a bulk job.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                className="btn btn--secondary"
+                style={{ height: 32, fontSize: 12, background: "rgba(255, 255, 255, 0.06)", color: "#fff", borderColor: "rgba(255, 255, 255, 0.12)" }}
+                onClick={() => {
+                  try {
+                    localStorage.removeItem("bt_selected_assets_for_ai");
+                    setSelectedForAI(null);
+                  } catch (e) {}
+                }}
+              >
+                Clear
+              </button>
+              <button
+                className="btn btn--primary"
+                style={{ height: 32, fontSize: 12 }}
+                onClick={() => {
+                  const targetTool = selectedForAI.toolId || "upscaler";
+                  onOpen(targetTool);
+                }}
+              >
+                Open in {selectedForAI.toolId === "upscaler" ? "Upscaler" : selectedForAI.toolId === "editor" ? "Editor" : "Video Gen"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Quick actions */}
         <div className="quick-actions">

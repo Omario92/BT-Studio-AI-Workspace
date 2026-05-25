@@ -1,6 +1,9 @@
 import prisma from '../../config/database';
 import { Errors } from '../../utils/errors';
 import { AssetStatus, ReviewDecision } from '@prisma/client';
+import { storageService } from '../storage/storage.service';
+import { createJob, createBatch } from '../jobs/jobs.service';
+
 
 export interface CreateAssetInput {
   name: string;
@@ -385,3 +388,269 @@ export async function getComments(assetId: string) {
     include: { author: { select: { id: true, name: true, avatarUrl: true } } },
   });
 }
+
+// ─── Bulk Operations (v6.0) ───────────────────
+
+export async function bulkDeleteAssets(assetIds: string[], userId: string) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } }
+  });
+
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  for (const asset of assets) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: asset.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
+    
+    const isOwner = asset.creatorId === userId;
+    const canDeleteAll = member && ['PRODUCER', 'ART_DIRECTOR', 'ADMIN'].includes(member.role);
+    if (!isOwner && !canDeleteAll && !isAdmin) {
+      throw Errors.Forbidden(`Only the creator or project lead can delete asset ${asset.name}`);
+    }
+  }
+
+  await prisma.asset.deleteMany({
+    where: { id: { in: assetIds } }
+  });
+
+  const firstAsset = assets[0];
+  await prisma.activityLog.create({
+    data: {
+      action: 'bulk deleted',
+      entityType: 'asset',
+      entityId: firstAsset.id,
+      detail: `${assets.length} assets`,
+      userId,
+      projectId: firstAsset.projectId,
+    }
+  });
+
+  return { deletedIds: assetIds };
+}
+
+export async function bulkMoveAssets(assetIds: string[], targetFolderId: string, userId: string) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+  
+  const targetFolder = await prisma.folder.findUnique({ where: { id: targetFolderId } });
+  if (!targetFolder) throw Errors.NotFound('Target folder not found');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } }
+  });
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  for (const asset of assets) {
+    if (asset.projectId !== targetFolder.projectId) {
+      throw Errors.BadRequest(`Asset ${asset.name} project mismatch with target folder`);
+    }
+
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: asset.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
+  }
+
+  await prisma.asset.updateMany({
+    where: { id: { in: assetIds } },
+    data: { folderId: targetFolderId }
+  });
+
+  const firstAsset = assets[0];
+  await prisma.activityLog.create({
+    data: {
+      action: 'bulk moved',
+      entityType: 'asset',
+      entityId: firstAsset.id,
+      detail: `${assets.length} assets to folder ${targetFolder.name}`,
+      userId,
+      projectId: firstAsset.projectId,
+    }
+  });
+
+  return prisma.asset.findMany({
+    where: { id: { in: assetIds } },
+    include: {
+      creator: { select: { id: true, name: true, avatarUrl: true } },
+      folder: { select: { id: true, name: true } },
+      _count: { select: { comments: true, versions: true } },
+    }
+  });
+}
+
+export async function bulkCopyAssets(assetIds: string[], targetFolderId: string, userId: string) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+
+  const targetFolder = await prisma.folder.findUnique({ where: { id: targetFolderId } });
+  if (!targetFolder) throw Errors.NotFound('Target folder not found');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } },
+    include: {
+      versions: {
+        orderBy: { versionNumber: 'desc' },
+        take: 1
+      }
+    }
+  });
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  const copiedAssets = [];
+
+  for (const asset of assets) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: targetFolder.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to target project for copy`);
+
+    const newAsset = await prisma.asset.create({
+      data: {
+        name: `Copy of ${asset.name}`,
+        fileUrl: asset.fileUrl,
+        mimeType: asset.mimeType,
+        fileSizeBytes: asset.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        currentVersion: 1,
+        projectId: targetFolder.projectId,
+        folderId: targetFolderId,
+        creatorId: userId,
+        metadata: asset.metadata as any,
+      }
+    });
+
+    const sourceVersion = asset.versions[0];
+    await prisma.assetVersion.create({
+      data: {
+        assetId: newAsset.id,
+        versionNumber: 1,
+        fileUrl: sourceVersion?.fileUrl || asset.fileUrl,
+        mimeType: sourceVersion?.mimeType || asset.mimeType,
+        fileSizeBytes: sourceVersion?.fileSizeBytes || asset.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        createdById: userId,
+        params: sourceVersion?.params as any,
+      }
+    });
+
+    copiedAssets.push(newAsset);
+  }
+
+  const firstAsset = assets[0];
+  await prisma.activityLog.create({
+    data: {
+      action: 'bulk copied',
+      entityType: 'asset',
+      entityId: firstAsset.id,
+      detail: `${assets.length} assets`,
+      userId,
+      projectId: targetFolder.projectId,
+    }
+  });
+
+  return copiedAssets;
+}
+
+export async function bulkDownloadAssets(assetIds: string[], userId: string) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } }
+  });
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  const files = [];
+
+  for (const asset of assets) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: asset.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
+
+    const metadata: any = asset.metadata || {};
+    const fileKey = metadata.fileKey || null;
+
+    let url = asset.fileUrl || null;
+    if (fileKey) {
+      try {
+        url = await storageService.createSignedDownload(fileKey);
+      } catch (err) {
+        console.warn(`[bulkDownloadAssets] Failed to create signed URL for key ${fileKey}:`, err);
+      }
+    }
+
+    files.push({
+      assetId: asset.id,
+      name: asset.name,
+      url,
+    });
+  }
+
+  return { files };
+}
+
+export async function useAssetsWithAI(
+  assetIds: string[],
+  input: { projectId: string; toolId: string; jobType: any; mode: 'single' | 'batch' },
+  userId: string
+) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } }
+  });
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  for (const asset of assets) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: input.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
+  }
+
+  if (input.mode === 'single' || assetIds.length === 1) {
+    const asset = assets[0];
+    const job = await createJob({
+      name: `AI Action on ${asset.name}`,
+      type: input.jobType,
+      projectId: input.projectId,
+      toolId: input.toolId,
+      params: {
+        sourceAssetId: asset.id,
+        fileKey: (asset.metadata as any)?.fileKey || null,
+        fileUrl: asset.fileUrl,
+      }
+    }, userId);
+    return { mode: 'single', job };
+  } else {
+    const batchInputs = assets.map(asset => ({
+      name: `AI Action on ${asset.name}`,
+      params: {
+        sourceAssetId: asset.id,
+        fileKey: (asset.metadata as any)?.fileKey || null,
+        fileUrl: asset.fileUrl,
+      }
+    }));
+
+    const batch = await createBatch(input.projectId, input.toolId, batchInputs, userId);
+    return { mode: 'batch', batch };
+  }
+}
+

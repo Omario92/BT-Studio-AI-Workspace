@@ -38,6 +38,82 @@ function ProjectMgmt() {
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
 
+  // Frame.io selection states (v6.0)
+  const [selectedAssetIds, setSelectedAssetIds] = React.useState(new Set());
+  const [lastSelectedAssetId, setLastSelectedAssetId] = React.useState(null);
+  const [bulkActionBusy, setBulkActionBusy] = React.useState(false);
+  const [bulkActionError, setBulkActionError] = React.useState(null);
+  const [moveModalOpen, setMoveModalOpen] = React.useState(false);
+  const [copyModalOpen, setCopyModalOpen] = React.useState(false);
+  const [aiActionMenuOpen, setAiActionMenuOpen] = React.useState(false);
+  const [targetFolderId, setTargetFolderId] = React.useState(null);
+
+  // Clear selection when project or folder changes
+  React.useEffect(() => {
+    setSelectedAssetIds(new Set());
+    setLastSelectedAssetId(null);
+    setAiActionMenuOpen(false);
+  }, [currentProject, activeFolderId]);
+
+  // Keyboard shortcuts (Escape, Ctrl+A)
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setSelectedAssetIds(new Set());
+        setLastSelectedAssetId(null);
+        setAiActionMenuOpen(false);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        if (
+          document.activeElement &&
+          (document.activeElement.tagName === "INPUT" ||
+            document.activeElement.tagName === "TEXTAREA" ||
+            document.activeElement.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        if (assets.length > 0) {
+          setSelectedAssetIds(new Set(assets.map((a) => a.id)));
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [assets]);
+
+  // Shift-click support for multi-selection
+  const handleToggleSelect = (assetId, event) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    setSelectedAssetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(assetId)) {
+        next.delete(assetId);
+        if (lastSelectedAssetId === assetId) {
+          setLastSelectedAssetId(null);
+        }
+      } else {
+        if (event && event.shiftKey && lastSelectedAssetId) {
+          const visibleIds = assets.map((a) => a.id);
+          const startIdx = visibleIds.indexOf(lastSelectedAssetId);
+          const endIdx = visibleIds.indexOf(assetId);
+          if (startIdx !== -1 && endIdx !== -1) {
+            const min = Math.min(startIdx, endIdx);
+            const max = Math.max(startIdx, endIdx);
+            for (let i = min; i <= max; i++) {
+              next.add(visibleIds[i]);
+            }
+          }
+        } else {
+          next.add(assetId);
+        }
+        setLastSelectedAssetId(assetId);
+      }
+      return next;
+    });
+  };
+
   // Object URL cache to prevent memory leaks
   const objectUrlsRef = React.useRef([]);
 
@@ -266,6 +342,129 @@ function ProjectMgmt() {
     }
   };
 
+  // Bulk action handlers (v6.0)
+  const handleBulkDelete = async () => {
+    if (selectedAssetIds.size === 0) return;
+    if (!window.confirm(`Are you sure you want to permanently delete these ${selectedAssetIds.size} assets?`)) return;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const ids = Array.from(selectedAssetIds);
+      await assetsApi.bulkDelete(ids);
+      setAssets(prev => prev.filter(a => !selectedAssetIds.has(a.id)));
+      setSelectedAssetIds(new Set());
+      setLastSelectedAssetId(null);
+    } catch (err) {
+      setBulkActionError(err?.message || 'Failed to delete assets');
+      alert(err?.message || 'Failed to delete assets');
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  const handleBulkMove = async () => {
+    if (selectedAssetIds.size === 0 || !targetFolderId) return;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const ids = Array.from(selectedAssetIds);
+      await assetsApi.bulkMove(ids, targetFolderId);
+      setAssets(prev => prev.filter(a => !selectedAssetIds.has(a.id)));
+      setSelectedAssetIds(new Set());
+      setLastSelectedAssetId(null);
+      setMoveModalOpen(false);
+      setTargetFolderId(null);
+    } catch (err) {
+      setBulkActionError(err?.message || 'Failed to move assets');
+      alert(err?.message || 'Failed to move assets');
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  const handleBulkCopy = async () => {
+    if (selectedAssetIds.size === 0 || !targetFolderId) return;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const ids = Array.from(selectedAssetIds);
+      await assetsApi.bulkCopy(ids, targetFolderId);
+      if (targetFolderId === activeFolderId) {
+        refreshAssetGrid();
+      }
+      setSelectedAssetIds(new Set());
+      setLastSelectedAssetId(null);
+      setCopyModalOpen(false);
+      setTargetFolderId(null);
+      alert(`Copied ${ids.length} assets successfully!`);
+    } catch (err) {
+      setBulkActionError(err?.message || 'Failed to copy assets');
+      alert(err?.message || 'Failed to copy assets');
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedAssetIds.size === 0) return;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const ids = Array.from(selectedAssetIds);
+      const files = await assetsApi.bulkDownload(ids);
+      if (files && files.length > 0) {
+        files.forEach((file, index) => {
+          setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = resolveFileUrl(file.url);
+            link.download = file.name || 'asset';
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }, index * 400);
+        });
+      } else {
+        throw new Error("No files found for download");
+      }
+    } catch (err) {
+      setBulkActionError(err?.message || 'Failed to download assets');
+      alert(err?.message || 'Failed to download assets');
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  const handleUseWithAI = async (toolId, jobType) => {
+    if (selectedAssetIds.size === 0) return;
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+    try {
+      const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
+      localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify({
+        projectId: currentProject.id,
+        assets: selectedAssets.map(a => ({
+          id: a.id,
+          name: a.name,
+          fileKey: a.metadata?.fileKey || null,
+          fileUrl: a.fileUrl || null,
+          mimeType: a.mimeType,
+        })),
+        toolId,
+        jobType,
+      }));
+      localStorage.setItem("bt_tool", toolId || "image-gen");
+      localStorage.setItem("bt_screen", "workspace");
+      window.location.reload();
+    } catch (err) {
+      setBulkActionError(err?.message || 'Failed to send assets to AI Workspace');
+      alert(err?.message || 'Failed to send assets to AI Workspace');
+    } finally {
+      setBulkActionBusy(false);
+      setAiActionMenuOpen(false);
+    }
+  };
+
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
     if (!name) { setFolderError('Folder name is required'); return; }
@@ -442,6 +641,24 @@ function ProjectMgmt() {
     });
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
+
+  const selectedSizeMB = React.useMemo(() => {
+    const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
+    const totalBytes = selectedAssets.reduce((sum, a) => sum + (a.fileSizeBytes || 0), 0);
+    return (totalBytes / 1024 / 1024).toFixed(1);
+  }, [selectedAssetIds, assets]);
+
+  const flattenedFoldersForPicker = React.useMemo(() => {
+    const flatten = (folderNodes, depth) =>
+      (folderNodes || []).flatMap(f => [
+        { id: f.id, name: f.name, depth },
+        ...flatten(f.children || [], depth + 1),
+      ]);
+    return [
+      { id: "root", name: "Root Folder", depth: 0 },
+      ...flatten(folders, 1)
+    ];
+  }, [folders]);
 
   const handleTreeClick = (node) => {
     if (node.type === 'project') {
@@ -653,7 +870,7 @@ function ProjectMgmt() {
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
                 <div
-                  className="asset-card asset-card--clickable"
+                  className={`asset-card asset-card--clickable ${selectedAssetIds.has(a.id) ? 'asset-card--selected' : ''}`}
                   key={a.id || i}
                   onClick={() => handleOpenAsset(a)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenAsset(a); } }}
@@ -661,6 +878,11 @@ function ProjectMgmt() {
                   role="button"
                   title="Open asset review"
                   style={{ cursor: 'pointer' }}>
+                  <div
+                    className={`asset-card__checkbox ${selectedAssetIds.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+                    onClick={(e) => handleToggleSelect(a.id, e)}
+                    title="Select asset"
+                  />
                   <div className="asset-card__thumb">
                     {(() => {
                       const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
@@ -694,9 +916,19 @@ function ProjectMgmt() {
             })}
           </div>
         ) : view === "list" ? (
-          <AssetList assets={assets} onSelect={handleOpenAsset} />
+          <AssetList
+            assets={assets}
+            onSelect={handleOpenAsset}
+            selectedAssetIds={selectedAssetIds}
+            onToggleSelect={handleToggleSelect}
+          />
         ) : (
-          <AssetCompare assets={assets} onSelect={handleOpenAsset} />
+          <AssetCompare
+            assets={assets}
+            onSelect={handleOpenAsset}
+            selectedAssetIds={selectedAssetIds}
+            onToggleSelect={handleToggleSelect}
+          />
         )}
       </div>
 
@@ -765,6 +997,99 @@ function ProjectMgmt() {
           previewError={previewError}
         />
       )}
+
+      {/* ── Fixed Bottom Selection Bar (v6.0) ── */}
+      <div className={`asset-selection-bar ${selectedAssetIds.size > 0 ? 'asset-selection-bar--active' : ''}`}>
+        <div className="asset-selection-bar__left">
+          <button className="asset-selection-bar__clear" onClick={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }} title="Clear selection">×</button>
+          <span><strong>{selectedAssetIds.size}</strong> assets selected · {selectedSizeMB} MB</span>
+        </div>
+        <div className="asset-selection-bar__actions" style={{ position: 'relative' }}>
+          <button className="asset-selection-bar__btn asset-selection-bar__btn--primary" onClick={() => setAiActionMenuOpen(p => !p)}>
+            {I.spark} Use with AI
+          </button>
+          {aiActionMenuOpen && (
+            <div className="bulk-menu">
+              <button className="bulk-menu__item" onClick={() => handleUseWithAI("upscaler", "upscale")}>
+                Image Upscaler
+              </button>
+              <button className="bulk-menu__item" onClick={() => handleUseWithAI("editor", "edit")}>
+                Image Editor
+              </button>
+              <button className="bulk-menu__item" onClick={() => handleUseWithAI("video-gen", "video")}>
+                Video Generator
+              </button>
+            </div>
+          )}
+          <button className="asset-selection-bar__btn" onClick={() => setMoveModalOpen(true)}>
+            {I.folder} Move to
+          </button>
+          <button className="asset-selection-bar__btn" onClick={() => setCopyModalOpen(true)}>
+            {I.layers} Copy to
+          </button>
+          <button className="asset-selection-bar__btn" onClick={handleBulkDownload}>
+            {I.download} Download
+          </button>
+          <button className="asset-selection-bar__btn asset-selection-bar__btn--danger" onClick={handleBulkDelete}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 2 }}>
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {/* ── Move / Copy Folder Modal ── */}
+      {(moveModalOpen || copyModalOpen) && (
+        <div className="move-copy-modal" onClick={() => { setMoveModalOpen(false); setCopyModalOpen(false); setTargetFolderId(null); }}>
+          <div className="move-copy-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="move-copy-modal__head">
+              <h3>{moveModalOpen ? "Move Assets" : "Copy Assets"}</h3>
+              <button
+                className="icon-btn icon-btn--light"
+                onClick={() => { setMoveModalOpen(false); setCopyModalOpen(false); setTargetFolderId(null); }}
+              >×</button>
+            </div>
+            <div className="move-copy-modal__body">
+              <p style={{ margin: "0 0 12px", fontSize: "12.5px", color: "var(--ink-3)" }}>
+                Select a target folder to {moveModalOpen ? "move" : "copy"} the {selectedAssetIds.size} selected assets:
+              </p>
+              {flattenedFoldersForPicker.map((item) => {
+                const isItemSel = (targetFolderId === null && item.id === "root") || (targetFolderId === item.id);
+                return (
+                  <div
+                    key={item.id}
+                    className={`folder-tree-picker__item ${isItemSel ? "folder-tree-picker__item--selected" : ""}`}
+                    style={{ paddingLeft: 12 + item.depth * 16 }}
+                    onClick={() => setTargetFolderId(item.id === "root" ? null : item.id)}
+                  >
+                    <span style={{ display: "inline-flex", color: isItemSel ? "var(--accent)" : "var(--ink-4)", marginRight: 8 }}>
+                      {I.folder}
+                    </span>
+                    <span>{item.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="move-copy-modal__foot">
+              <button
+                className="btn btn--ghost"
+                onClick={() => { setMoveModalOpen(false); setCopyModalOpen(false); setTargetFolderId(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn--primary"
+                disabled={bulkActionBusy || targetFolderId === undefined}
+                onClick={moveModalOpen ? handleBulkMove : handleBulkCopy}
+              >
+                {bulkActionBusy ? "Processing..." : (moveModalOpen ? "Move Assets" : "Copy Assets")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -772,7 +1097,7 @@ function ProjectMgmt() {
 const SIZES = ["1.2 MB", "3.8 MB", "5.1 MB", "820 KB", "2.4 MB", "7.2 MB", "4.6 MB", "1.9 MB"];
 const RES   = ["2048×2048", "1920×1080", "4096×4096", "1024×1024", "1080×1920", "3840×2160"];
 
-function AssetList({ assets, onSelect }) {
+function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
   return (
     <div className="asset-table">
       <div className="asset-table__head">
@@ -786,6 +1111,7 @@ function AssetList({ assets, onSelect }) {
         <span></span>
       </div>
       {assets.map((a, i) => {
+        const isSelected = selectedAssetIds?.has(a.id);
         const statusKey = a.status || "DRAFT";
         const [cls, label] = STATUS[statusKey] ?? ["chip chip--draft", "Draft"];
         const commentsCount = a._count?.comments ?? a.comments ?? 0;
@@ -793,8 +1119,31 @@ function AssetList({ assets, onSelect }) {
         const creatorName = a.creator?.name ?? "System";
         const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
         return (
-          <div className="asset-table__row" key={a.id || i} onClick={() => onSelect?.(a)} style={{ cursor: 'pointer' }}>
-            <div className="asset-table__thumb">
+          <div
+            className={`asset-table__row ${isSelected ? "asset-table__row--selected" : ""}`}
+            key={a.id || i}
+            onClick={() => onSelect?.(a)}
+            style={{
+              cursor: 'pointer',
+              position: 'relative',
+              background: isSelected ? 'rgba(59, 130, 246, 0.05)' : undefined,
+              borderLeft: isSelected ? '3px solid var(--accent, #3b82f6)' : undefined,
+            }}
+          >
+            <div className="asset-table__thumb" style={{ position: 'relative', overflow: 'visible' }}>
+              <div
+                className={`asset-card__checkbox ${isSelected ? 'asset-card__checkbox--checked' : ''}`}
+                onClick={(e) => onToggleSelect?.(a.id, e)}
+                title="Select asset"
+                style={{
+                  opacity: isSelected ? 1 : undefined,
+                  top: -4,
+                  left: -4,
+                  width: 16,
+                  height: 16,
+                  background: isSelected ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
+                }}
+              />
               {(() => {
                 const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
                 if (thumbSrc) {
@@ -826,7 +1175,7 @@ function AssetList({ assets, onSelect }) {
   );
 }
 
-function AssetCompare({ assets, onSelect }) {
+function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
   const [left, setLeft]   = React.useState(0);
   const [right, setRight] = React.useState(Math.min(assets.length - 1, 1));
   
@@ -906,8 +1255,22 @@ function AssetCompare({ assets, onSelect }) {
       <div className="asset-compare__filmstrip">
         {assets.map((a, i) => (
           <div key={i}
-            className={`asset-compare__filmstrip-item ${left === i ? "active" : ""}`}
-            onClick={() => setLeft(i)}>
+            className={`asset-compare__filmstrip-item ${left === i ? "active" : ""} ${selectedAssetIds?.has(a.id) ? "asset-card--selected" : ""}`}
+            onClick={() => setLeft(i)}
+            style={{ position: 'relative', overflow: 'visible' }}>
+            <div
+              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              onClick={(e) => onToggleSelect?.(a.id, e)}
+              title="Select asset"
+              style={{
+                opacity: selectedAssetIds?.has(a.id) ? 1 : undefined,
+                top: -4,
+                left: -4,
+                width: 14,
+                height: 14,
+                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
+              }}
+            />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
             <span className="badge-mini">v{a.currentVersion ?? a.v ?? 1}</span>
           </div>
@@ -921,8 +1284,22 @@ function AssetCompare({ assets, onSelect }) {
       <div className="asset-compare__filmstrip">
         {assets.map((a, i) => (
           <div key={i}
-            className={`asset-compare__filmstrip-item ${right === i ? "active" : ""}`}
-            onClick={() => setRight(i)}>
+            className={`asset-compare__filmstrip-item ${right === i ? "active" : ""} ${selectedAssetIds?.has(a.id) ? "asset-card--selected" : ""}`}
+            onClick={() => setRight(i)}
+            style={{ position: 'relative', overflow: 'visible' }}>
+            <div
+              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              onClick={(e) => onToggleSelect?.(a.id, e)}
+              title="Select asset"
+              style={{
+                opacity: selectedAssetIds?.has(a.id) ? 1 : undefined,
+                top: -4,
+                left: -4,
+                width: 14,
+                height: 14,
+                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
+              }}
+            />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
             <span className="badge-mini">v{a.currentVersion ?? a.v ?? 1}</span>
           </div>
