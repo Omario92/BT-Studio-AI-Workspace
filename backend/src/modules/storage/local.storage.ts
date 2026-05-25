@@ -112,4 +112,21 @@ export class LocalStorageProvider implements StorageProvider {
       await fs.promises.unlink(filePath);
     }
   }
+
+  async deleteObjects(fileKeys: string[]): Promise<{
+    deleted: string[];
+    failed: { fileKey: string; error: string }[];
+  }> {
+    const deleted: string[] = [];
+    const failed: { fileKey: string; error: string }[] = [];
+    for (const key of fileKeys) {
+      try {
+        await this.deleteObject(key);
+        deleted.push(key);
+      } catch (err: any) {
+        failed.push({ fileKey: key, error: err.message ?? String(err) });
+      }
+    }
+    return { deleted, failed };
+  }
 }

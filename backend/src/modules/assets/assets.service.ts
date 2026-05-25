@@ -3,6 +3,43 @@ import { Errors } from '../../utils/errors';
 import { AssetStatus, ReviewDecision } from '@prisma/client';
 import { storageService } from '../storage/storage.service';
 import { createJob, createBatch } from '../jobs/jobs.service';
+import { extractAssetStorageKeys } from './asset-storage-keys';
+
+/** Delete a list of storage keys, classifying NotFound errors as success. */
+async function deleteStorageObjects(fileKeys: string[]): Promise<{
+  deleted: string[];
+  failed: { fileKey: string; error: string }[];
+}> {
+  if (!fileKeys || fileKeys.length === 0) return { deleted: [], failed: [] };
+
+  // Prefer bulk delete when the provider supports it
+  if (typeof (storageService as any).deleteObjects === 'function') {
+    const res = await (storageService as any).deleteObjects(fileKeys);
+    // Treat "not found" errors as already-gone
+    const benign = (e: { error: string }) => /not\s*found|nosuchkey|404/i.test(e.error);
+    return {
+      deleted: [...res.deleted, ...res.failed.filter(benign).map((e: { fileKey: string }) => e.fileKey)],
+      failed: res.failed.filter((e: { error: string }) => !benign(e)),
+    };
+  }
+
+  const deleted: string[] = [];
+  const failed: { fileKey: string; error: string }[] = [];
+  for (const key of fileKeys) {
+    try {
+      await storageService.deleteObject(key);
+      deleted.push(key);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      if (/not\s*found|nosuchkey|404/i.test(msg)) {
+        deleted.push(key); // benign — already gone
+      } else {
+        failed.push({ fileKey: key, error: msg });
+      }
+    }
+  }
+  return { deleted, failed };
+}
 
 
 export interface CreateAssetInput {
@@ -158,11 +195,77 @@ export async function createAsset(data: CreateAssetInput, creatorId: string) {
   return asset;
 }
 
-export async function deleteAsset(id: string, userId: string) {
-  const asset = await prisma.asset.findUnique({ where: { id } });
+/**
+ * Delete an asset.
+ *
+ * Flow:
+ *  1. Load asset + versions so we can collect every storage key.
+ *  2. Permission check (creator OR project producer/art-director/admin).
+ *  3. Delete R2/S3 objects FIRST. If any non-benign storage failure occurs:
+ *       - if `force` is false → throw, keep DB row, return failedFileKeys
+ *       - if `force` is true  → continue to DB delete (orphans are accepted)
+ *  4. Delete DB asset (cascades to versions, reviews, comments).
+ *  5. Activity log + return summary.
+ */
+export async function deleteAsset(id: string, userId: string, opts: { force?: boolean } = {}) {
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    include: {
+      versions: true,
+    },
+  });
   if (!asset) throw Errors.NotFound('Asset not found');
-  if (asset.creatorId !== userId) throw Errors.Forbidden('Only the asset creator can delete it');
+
+  // Permission: creator OR admin OR project producer/art-director
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+  if (asset.creatorId !== userId && !isAdmin) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: asset.projectId, userId } },
+    });
+    const canDeleteAll = member && ['PRODUCER', 'ART_DIRECTOR', 'ADMIN'].includes(member.role);
+    if (!canDeleteAll) throw Errors.Forbidden('Only the asset creator or a project lead can delete it');
+  }
+
+  // 1. Collect every owned storage key referenced by this asset/versions
+  const fileKeys = extractAssetStorageKeys(asset);
+
+  // 2. Delete object-store files
+  const { deleted: deletedFileKeys, failed: failedFileKeys } = await deleteStorageObjects(fileKeys);
+
+  // 3. Refuse to drop the DB row if storage cleanup failed (unless force)
+  if (failedFileKeys.length > 0 && !opts.force) {
+    throw Errors.Internal(
+      `Asset DB delete blocked: storage cleanup failed for ${failedFileKeys.length} object(s). ` +
+      `Pass force=true to delete the DB row anyway and leave the orphans. ` +
+      `Failed keys: ${failedFileKeys.slice(0, 3).map(f => f.fileKey).join(', ')}${failedFileKeys.length > 3 ? '…' : ''}`
+    );
+  }
+
+  // 4. Activity log BEFORE delete (so we have project context)
+  await prisma.activityLog.create({
+    data: {
+      action: 'deleted',
+      entityType: 'asset',
+      entityId: id,
+      detail: JSON.stringify({
+        deletedFileKeys,
+        failedFileKeys: failedFileKeys.map(f => f.fileKey),
+        forced: !!opts.force,
+      }).slice(0, 1000),
+      userId,
+      projectId: asset.projectId,
+    },
+  });
+
+  // 5. DB delete (cascades versions/comments/reviews)
   await prisma.asset.delete({ where: { id } });
+
+  return {
+    deletedId: id,
+    deletedFileKeys,
+    failedFileKeys,
+  };
 }
 
 // ─── Send to Review ───────────────────────────
@@ -391,11 +494,12 @@ export async function getComments(assetId: string) {
 
 // ─── Bulk Operations (v6.0) ───────────────────
 
-export async function bulkDeleteAssets(assetIds: string[], userId: string) {
+export async function bulkDeleteAssets(assetIds: string[], userId: string, opts: { force?: boolean } = {}) {
   if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
 
   const assets = await prisma.asset.findMany({
-    where: { id: { in: assetIds } }
+    where: { id: { in: assetIds } },
+    include: { versions: true },
   });
 
   if (assets.length === 0) throw Errors.NotFound('No assets found');
@@ -403,12 +507,13 @@ export async function bulkDeleteAssets(assetIds: string[], userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const isAdmin = user?.role === 'ADMIN';
 
+  // ─── Permission check ───────────────────────────
   for (const asset of assets) {
     const member = await prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId: asset.projectId, userId } }
     });
     if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
-    
+
     const isOwner = asset.creatorId === userId;
     const canDeleteAll = member && ['PRODUCER', 'ART_DIRECTOR', 'ADMIN'].includes(member.role);
     if (!isOwner && !canDeleteAll && !isAdmin) {
@@ -416,23 +521,72 @@ export async function bulkDeleteAssets(assetIds: string[], userId: string) {
     }
   }
 
-  await prisma.asset.deleteMany({
-    where: { id: { in: assetIds } }
-  });
+  // ─── Per-asset storage delete + DB delete ───────
+  const deletedIds: string[] = [];
+  const allDeletedFileKeys: string[] = [];
+  const failed: { assetId: string; reason: string; failedFileKeys: string[] }[] = [];
 
-  const firstAsset = assets[0];
-  await prisma.activityLog.create({
-    data: {
-      action: 'bulk deleted',
-      entityType: 'asset',
-      entityId: firstAsset.id,
-      detail: `${assets.length} assets`,
-      userId,
-      projectId: firstAsset.projectId,
+  for (const asset of assets) {
+    const fileKeys = extractAssetStorageKeys(asset);
+    const { deleted, failed: failedStorage } = await deleteStorageObjects(fileKeys);
+
+    if (failedStorage.length > 0 && !opts.force) {
+      failed.push({
+        assetId: asset.id,
+        reason: `storage cleanup failed for ${failedStorage.length} object(s)`,
+        failedFileKeys: failedStorage.map(f => f.fileKey),
+      });
+      continue; // keep the DB row
     }
-  });
 
-  return { deletedIds: assetIds };
+    try {
+      await prisma.asset.delete({ where: { id: asset.id } });
+      deletedIds.push(asset.id);
+      allDeletedFileKeys.push(...deleted);
+
+      await prisma.activityLog.create({
+        data: {
+          action: 'deleted',
+          entityType: 'asset',
+          entityId: asset.id,
+          detail: JSON.stringify({
+            deletedFileKeys: deleted,
+            failedFileKeys: failedStorage.map(f => f.fileKey),
+            forced: !!opts.force,
+            bulk: true,
+          }).slice(0, 1000),
+          userId,
+          projectId: asset.projectId,
+        },
+      });
+    } catch (dbErr: any) {
+      failed.push({
+        assetId: asset.id,
+        reason: `db delete failed: ${dbErr.message ?? String(dbErr)}`,
+        failedFileKeys: [],
+      });
+    }
+  }
+
+  // Aggregate activity log
+  if (deletedIds.length > 0) {
+    await prisma.activityLog.create({
+      data: {
+        action: 'bulk deleted',
+        entityType: 'asset',
+        entityId: deletedIds[0],
+        detail: `${deletedIds.length} assets, ${allDeletedFileKeys.length} files`,
+        userId,
+        projectId: assets[0].projectId,
+      }
+    });
+  }
+
+  return {
+    deletedIds,
+    deletedFileKeys: allDeletedFileKeys,
+    failed,
+  };
 }
 
 export async function bulkMoveAssets(assetIds: string[], targetFolderId: string, userId: string) {

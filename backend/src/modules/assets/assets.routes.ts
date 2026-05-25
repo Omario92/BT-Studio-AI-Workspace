@@ -21,15 +21,25 @@ export async function assetRoutes(fastify: FastifyInstance) {
     return reply.send({ asset });
   });
 
-  // DELETE /assets/:id
+  // DELETE /assets/:id?force=true
+  // Deletes asset + all referenced R2/S3 objects. Returns the cleanup summary
+  // so the frontend can report what was removed (or what failed).
   fastify.delete('/:id', {
     ...auth,
-    schema: { tags: ['Assets'], summary: 'Delete an asset (creator only)' },
+    schema: {
+      tags: ['Assets'],
+      summary: 'Delete an asset (and its R2/S3 files). force=true accepts storage orphans.',
+      querystring: {
+        type: 'object',
+        properties: { force: { type: 'boolean' } },
+      },
+    },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const { force } = req.query as { force?: boolean };
     const userId = (req.user as any).sub;
-    await deleteAsset(id, userId);
-    return reply.status(204).send();
+    const result = await deleteAsset(id, userId, { force });
+    return reply.send(result);
   });
 
   // GET /assets/:id/versions
@@ -155,23 +165,25 @@ export async function assetRoutes(fastify: FastifyInstance) {
   });
 
   // POST /assets/bulk-delete
+  // Deletes each asset's R2/S3 files, then the DB row. Reports per-asset failures.
   fastify.post('/bulk-delete', {
     ...auth,
     schema: {
       tags: ['Assets'],
-      summary: 'Bulk delete assets',
+      summary: 'Bulk delete assets (incl. R2/S3 files). force=true accepts orphans.',
       body: {
         type: 'object',
         required: ['assetIds'],
         properties: {
-          assetIds: { type: 'array', items: { type: 'string' } }
+          assetIds: { type: 'array', items: { type: 'string' } },
+          force: { type: 'boolean' },
         }
       }
     }
   }, async (req, reply) => {
     const userId = (req.user as any).sub;
-    const { assetIds } = req.body as { assetIds: string[] };
-    const result = await bulkDeleteAssets(assetIds, userId);
+    const { assetIds, force } = req.body as { assetIds: string[]; force?: boolean };
+    const result = await bulkDeleteAssets(assetIds, userId, { force });
     return reply.send(result);
   });
 
