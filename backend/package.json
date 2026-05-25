@@ -13,7 +13,9 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "lint": "eslint src --ext .ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "r2:orphan:dry-run": "tsx scratch/r2-orphan-cleanup.ts",
+    "r2:orphan:delete": "tsx scratch/r2-orphan-cleanup.ts --delete"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1053.0",

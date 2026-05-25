@@ -51,6 +51,22 @@ async function requestRevision(versionId, comment) {
   return data.review;
 }
 
+// ─── Delete (single + bulk) ──────────────────
+// Backend deletes the asset AND its R2/S3 files. Response now includes
+// deletedFileKeys / failedFileKeys so the UI can warn if storage cleanup
+// partially failed.
+async function deleteAsset(id, { force = false } = {}) {
+  const qs = force ? '?force=true' : '';
+  const { data } = await apiClient.delete(`/api/assets/${id}${qs}`);
+  // data may be null (204) for old clients; normalize.
+  return data ?? { deletedId: id, deletedFileKeys: [], failedFileKeys: [] };
+}
+
+async function bulkDelete(assetIds, { force = false } = {}) {
+  const { data } = await apiClient.post('/api/assets/bulk-delete', { assetIds, force });
+  return data; // { deletedIds, deletedFileKeys, failed }
+}
+
 async function getSignedUrl(fileKey) {
   if (!fileKey) return null;
 
@@ -363,14 +379,8 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
   };
 }
 
-async function deleteAsset(id) {
-  await apiClient.delete(`/api/assets/${id}`);
-}
-
-async function bulkDelete(assetIds) {
-  const { data } = await apiClient.post('/api/assets/bulk-delete', { assetIds });
-  return data;
-}
+// deleteAsset() + bulkDelete() are defined above (with R2 cleanup support).
+// Kept here as a section anchor only.
 
 async function bulkMove(assetIds, targetFolderId) {
   const { data } = await apiClient.post('/api/assets/bulk-move', { assetIds, targetFolderId });
