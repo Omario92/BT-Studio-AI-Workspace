@@ -200,19 +200,40 @@ export async function storageRoutes(fastify: FastifyInstance) {
       throw Errors.BadRequest('Missing fileKey query parameter');
     }
 
-    const baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
-    const safeKey = fileKey.replace(/\//g, path.sep);
-    const filePath = path.join(baseDir, safeKey);
-    
-    // Ensure parent directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    // In production (non-local driver) this route should never be called.
+    // Return a clear error instead of a filesystem 500.
+    if (env.STORAGE_DRIVER !== 'local') {
+      throw Errors.BadRequest(
+        'local-upload is only available when STORAGE_DRIVER=local. ' +
+        'Configure STORAGE_DRIVER=s3 and S3/R2 credentials for production.'
+      );
     }
 
-    // Stream raw body stream straight to file
+    // Resolve write path with /tmp fallback for read-only filesystems (e.g. Railway)
+    let baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
+    const safeKey = fileKey.replace(/\//g, path.sep);
+    let filePath = path.join(baseDir, safeKey);
+    let dir = path.dirname(filePath);
+
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      baseDir = '/tmp/uploads';
+      filePath = path.join(baseDir, safeKey);
+      dir = path.dirname(filePath);
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (e2: any) {
+        throw Errors.Internal(`Cannot create upload directory: ${e2.message}`);
+      }
+    }
+
+    // Use req.body (content-type-parsed stream) when available, else req.raw
+    const source: NodeJS.ReadableStream = (req.body as any) ?? req.raw;
     const writeStream = fs.createWriteStream(filePath);
-    await pipeline(req.raw, writeStream);
+    try {
+      await pipeline(source, writeStream);
+    } catch (e: any) {
+      throw Errors.Internal(`File write failed: ${e.message}`);
+    }
 
     return reply.send({ success: true, fileKey });
   });
@@ -225,17 +246,36 @@ export async function storageRoutes(fastify: FastifyInstance) {
       throw Errors.BadRequest('Missing fileKey query parameter');
     }
 
-    const baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
-    const safeKey = fileKey.replace(/\//g, path.sep);
-    const filePath = path.join(baseDir, safeKey);
-    
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (env.STORAGE_DRIVER !== 'local') {
+      throw Errors.BadRequest(
+        'local-upload is only available when STORAGE_DRIVER=local. ' +
+        'Configure STORAGE_DRIVER=s3 and S3/R2 credentials for production.'
+      );
     }
 
+    let baseDir = path.resolve(env.STORAGE_LOCAL_PATH);
+    const safeKey = fileKey.replace(/\//g, path.sep);
+    let filePath = path.join(baseDir, safeKey);
+    let dir = path.dirname(filePath);
+
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      baseDir = '/tmp/uploads';
+      filePath = path.join(baseDir, safeKey);
+      dir = path.dirname(filePath);
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (e2: any) {
+        throw Errors.Internal(`Cannot create upload directory: ${e2.message}`);
+      }
+    }
+
+    const source: NodeJS.ReadableStream = (req.body as any) ?? req.raw;
     const writeStream = fs.createWriteStream(filePath);
-    await pipeline(req.raw, writeStream);
+    try {
+      await pipeline(source, writeStream);
+    } catch (e: any) {
+      throw Errors.Internal(`File write failed: ${e.message}`);
+    }
 
     return reply.send({ success: true, fileKey });
   });
