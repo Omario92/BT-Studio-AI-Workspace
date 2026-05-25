@@ -3008,6 +3008,305 @@ input, textarea { outline: none; }
   .aiw__panel:nth-child(3) { display: none; }
 }
 
+/* ============================================
+   Frame.io-style Selectable Assets (v6.0)
+   ============================================ */
+
+:root {
+  --bt-sidebar-width: 248px;
+  --bt-project-files-width: 256px;
+}
+
+.pm.pm--collapsed {
+  --bt-project-files-width: 0px;
+}
+
+.asset-card {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.asset-card--selected {
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 1px #4f46e5 !important;
+  outline: none !important;
+}
+
+/* Checkbox Container Overlay */
+.asset-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 15, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s, border-color 0.12s;
+}
+
+/* Show checkbox on card hover or when selected for all views */
+.asset-card:hover .asset-checkbox,
+.asset-card--selected .asset-checkbox,
+.asset-table__row:hover .asset-checkbox,
+.asset-table__row--selected .asset-checkbox,
+.asset-compare__filmstrip-item:hover .asset-checkbox,
+.asset-compare__filmstrip-item.asset-card--selected .asset-checkbox {
+  opacity: 1;
+}
+
+/* Checkbox Check State */
+.asset-checkbox--checked {
+  background: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+}
+
+.asset-checkbox--checked::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 8px;
+  border: solid #FFFFFF;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+}
+
+/* Fixed Bottom Selection Bar */
+.asset-selection-bar {
+  position: fixed;
+  left: calc(var(--bt-sidebar-width) + var(--bt-project-files-width) + 24px);
+  right: 24px;
+  bottom: 16px;
+  height: 56px;
+  z-index: 999;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  padding: 0 14px 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(12, 14, 20, 0.94);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #FFFFFF;
+  transition: all 0.25s ease-in-out;
+}
+
+.asset-selection-bar__left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: #f7f7f2;
+  font-size: 13px;
+}
+
+.asset-selection-bar__clear {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.asset-selection-bar__clear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.asset-selection-bar__summary {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.asset-selection-bar__meta {
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+.asset-selection-bar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.selection-action {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7f7f2;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.selection-action:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.selection-action--icon {
+  width: 36px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.selection-more {
+  position: relative;
+}
+
+.selection-more-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #252837;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.selection-more-menu button {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #f7f7f2;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.selection-more-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 1100px) {
+  .asset-selection-bar {
+    left: 16px !important;
+    right: 16px !important;
+  }
+
+  .asset-selection-bar__actions {
+    overflow-x: auto;
+  }
+}
+
+/* Move/Copy Folder Modal and Tree */
+.move-copy-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(13, 15, 18, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.move-copy-modal__card {
+  width: 100%;
+  max-width: 440px;
+  background: #1c1f24;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.move-copy-modal__head {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.move-copy-modal__head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.move-copy-modal__body {
+  padding: 16px 20px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.folder-tree-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.folder-tree-picker__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #FFFFFF;
+}
+
+.folder-tree-picker__item--selected {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: var(--accent, #3b82f6) !important;
+  font-weight: 500;
+}
+
+.move-copy-modal__foot {
+  padding: 14px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: #171a1e;
+}
+
+
 </style>
 </head>
 <body>
@@ -4273,11 +4572,15 @@ function ProjectMgmt() {
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
 
-  const selectedSizeMB = React.useMemo(() => {
-    const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
-    const totalBytes = selectedAssets.reduce((sum, a) => sum + (a.fileSizeBytes || 0), 0);
-    return (totalBytes / 1024 / 1024).toFixed(1);
-  }, [selectedAssetIds, assets]);
+  const selectedAssets = React.useMemo(() => {
+    return assets.filter(a => selectedAssetIds.has(a.id));
+  }, [assets, selectedAssetIds]);
+
+  const selectedAssetsTotalSize = React.useMemo(() => {
+    return selectedAssets.reduce((sum, asset) => {
+      return sum + Number(asset.fileSizeBytes || asset.sizeBytes || asset.metadata?.fileSizeBytes || 0);
+    }, 0);
+  }, [selectedAssets]);
 
   const flattenedFoldersForPicker = React.useMemo(() => {
     const flatten = (folderNodes, depth) =>
@@ -4510,7 +4813,7 @@ function ProjectMgmt() {
                   title="Open asset review"
                   style={{ cursor: 'pointer' }}>
                   <div
-                    className={`asset-card__checkbox ${selectedAssetIds.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+                    className={`asset-checkbox ${selectedAssetIds.has(a.id) ? 'asset-checkbox--checked' : ''}`}
                     onClick={(e) => handleToggleSelect(a.id, e)}
                     title="Select asset"
                   />
@@ -4630,48 +4933,18 @@ function ProjectMgmt() {
       )}
 
       {/* ── Fixed Bottom Selection Bar (v6.0) ── */}
-      <div className={`asset-selection-bar ${selectedAssetIds.size > 0 ? 'asset-selection-bar--active' : ''}`}>
-        <div className="asset-selection-bar__left">
-          <button className="asset-selection-bar__clear" onClick={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }} title="Clear selection">✕</button>
-          <span>{selectedAssetIds.size} {selectedAssetIds.size === 1 ? 'Asset' : 'Assets'} selected · {selectedSizeMB} MB</span>
-        </div>
-        <div className="asset-selection-bar__actions" style={{ position: 'relative' }}>
-          {/* Dropdown triggers on click of three-dots icon */}
-          <button className="asset-selection-bar__btn" onClick={() => setAiActionMenuOpen(p => !p)} title="More actions">
-            {I.more}
-          </button>
-          {aiActionMenuOpen && (
-            <div className="bulk-menu" style={{ bottom: '40px', right: 'auto', left: '0' }}>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); handleBulkDelete(); }} style={{ color: '#f87171' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                Delete
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setTargetFolderId(activeFolderId); handleBulkCopy(); }}>
-                {I.save} Duplicate
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setMoveModalOpen(true); }}>
-                {I.folder} Move to
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setCopyModalOpen(true); }}>
-                {I.layers} Copy to
-              </button>
-            </div>
-          )}
-          
-          <button className="asset-selection-bar__btn" onClick={() => handleUseWithAI("upscaler", "upscale")}>
-            {I.spark} Use with AI
-          </button>
-          <button className="asset-selection-bar__btn" onClick={handleBulkDownload}>
-            {I.download} Download
-          </button>
-          <button className="asset-selection-bar__btn asset-selection-bar__btn--primary" onClick={() => setView("compare")}>
-            {I.eye} Compare Assets
-          </button>
-        </div>
-      </div>
+      {selectedAssetIds.size > 0 && selectedAssets.length > 0 && (
+        <AssetSelectionBar
+          selectedAssets={selectedAssets}
+          totalSizeBytes={selectedAssetsTotalSize}
+          onClear={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }}
+          onUseWithAI={() => handleUseWithAI("upscaler", "upscale")}
+          onMove={() => setMoveModalOpen(true)}
+          onCopy={() => setCopyModalOpen(true)}
+          onDownload={handleBulkDownload}
+          onDelete={handleBulkDelete}
+        />
+      )}
 
       {/* ── Move / Copy Folder Modal ── */}
       {(moveModalOpen || copyModalOpen) && (
@@ -4765,16 +5038,15 @@ function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
           >
             <div className="asset-table__thumb" style={{ position: 'relative', overflow: 'visible' }}>
               <div
-                className={`asset-card__checkbox ${isSelected ? 'asset-card__checkbox--checked' : ''}`}
+                className={`asset-checkbox ${isSelected ? 'asset-checkbox--checked' : ''}`}
                 onClick={(e) => onToggleSelect?.(a.id, e)}
                 title="Select asset"
                 style={{
                   opacity: isSelected ? 1 : undefined,
                   top: -4,
                   left: -4,
-                  width: 16,
-                  height: 16,
-                  background: isSelected ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
+                  width: 14,
+                  height: 14,
                 }}
               />
               {(() => {
@@ -4892,7 +5164,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
             onClick={() => setLeft(i)}
             style={{ position: 'relative', overflow: 'visible' }}>
             <div
-              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              className={`asset-checkbox ${selectedAssetIds?.has(a.id) ? 'asset-checkbox--checked' : ''}`}
               onClick={(e) => onToggleSelect?.(a.id, e)}
               title="Select asset"
               style={{
@@ -4901,7 +5173,6 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 left: -4,
                 width: 14,
                 height: 14,
-                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
               }}
             />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
@@ -4921,7 +5192,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
             onClick={() => setRight(i)}
             style={{ position: 'relative', overflow: 'visible' }}>
             <div
-              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              className={`asset-checkbox ${selectedAssetIds?.has(a.id) ? 'asset-checkbox--checked' : ''}`}
               onClick={(e) => onToggleSelect?.(a.id, e)}
               title="Select asset"
               style={{
@@ -4930,7 +5201,6 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 left: -4,
                 width: 14,
                 height: 14,
-                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
               }}
             />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
@@ -5197,6 +5467,78 @@ function AssetReviewModal({
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return "0.0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 0.1) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${mb.toFixed(2)} MB`;
+};
+
+function AssetSelectionBar({
+  selectedAssets,
+  totalSizeBytes,
+  onClear,
+  onUseWithAI,
+  onMove,
+  onCopy,
+  onDownload,
+  onDelete,
+}) {
+  const [moreOpen, setMoreOpen] = React.useState(false);
+
+  // Close dropdown on click outside
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, []);
+
+  return (
+    <div className="asset-selection-bar">
+      <div className="asset-selection-bar__left">
+        <button className="asset-selection-bar__clear" onClick={onClear} aria-label="Clear selection">
+          ×
+        </button>
+        <span className="asset-selection-bar__summary">
+          {selectedAssets.length} {selectedAssets.length === 1 ? "asset" : "assets"} selected
+        </span>
+        <span className="asset-selection-bar__meta">
+          · {formatFileSize(totalSizeBytes)}
+        </span>
+      </div>
+
+      <div className="asset-selection-bar__actions">
+        <button className="selection-action" onClick={onUseWithAI}>Use with AI</button>
+        <button className="selection-action" onClick={onMove}>Move to</button>
+        <button className="selection-action" onClick={onCopy}>Copy to</button>
+        <button className="selection-action" onClick={onDownload}>Download</button>
+
+        <div className="selection-more" ref={ref}>
+          <button className="selection-action selection-action--icon" onClick={() => setMoreOpen(v => !v)}>
+            …
+          </button>
+
+          {moreOpen && (
+            <div className="selection-more-menu">
+              <button onClick={() => { onDelete(); setMoreOpen(false); }}>Delete</button>
+              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Duplicate</button>
+              <button onClick={() => { onMove(); setMoreOpen(false); }}>Move to</button>
+              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Copy to</button>
+            </div>
+          )}
         </div>
       </div>
     </div>

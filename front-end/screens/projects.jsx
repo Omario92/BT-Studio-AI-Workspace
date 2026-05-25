@@ -642,11 +642,15 @@ function ProjectMgmt() {
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
 
-  const selectedSizeMB = React.useMemo(() => {
-    const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
-    const totalBytes = selectedAssets.reduce((sum, a) => sum + (a.fileSizeBytes || 0), 0);
-    return (totalBytes / 1024 / 1024).toFixed(1);
-  }, [selectedAssetIds, assets]);
+  const selectedAssets = React.useMemo(() => {
+    return assets.filter(a => selectedAssetIds.has(a.id));
+  }, [assets, selectedAssetIds]);
+
+  const selectedAssetsTotalSize = React.useMemo(() => {
+    return selectedAssets.reduce((sum, asset) => {
+      return sum + Number(asset.fileSizeBytes || asset.sizeBytes || asset.metadata?.fileSizeBytes || 0);
+    }, 0);
+  }, [selectedAssets]);
 
   const flattenedFoldersForPicker = React.useMemo(() => {
     const flatten = (folderNodes, depth) =>
@@ -879,7 +883,7 @@ function ProjectMgmt() {
                   title="Open asset review"
                   style={{ cursor: 'pointer' }}>
                   <div
-                    className={`asset-card__checkbox ${selectedAssetIds.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+                    className={`asset-checkbox ${selectedAssetIds.has(a.id) ? 'asset-checkbox--checked' : ''}`}
                     onClick={(e) => handleToggleSelect(a.id, e)}
                     title="Select asset"
                   />
@@ -999,48 +1003,18 @@ function ProjectMgmt() {
       )}
 
       {/* ── Fixed Bottom Selection Bar (v6.0) ── */}
-      <div className={`asset-selection-bar ${selectedAssetIds.size > 0 ? 'asset-selection-bar--active' : ''}`}>
-        <div className="asset-selection-bar__left">
-          <button className="asset-selection-bar__clear" onClick={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }} title="Clear selection">✕</button>
-          <span>{selectedAssetIds.size} {selectedAssetIds.size === 1 ? 'Asset' : 'Assets'} selected · {selectedSizeMB} MB</span>
-        </div>
-        <div className="asset-selection-bar__actions" style={{ position: 'relative' }}>
-          {/* Dropdown triggers on click of three-dots icon */}
-          <button className="asset-selection-bar__btn" onClick={() => setAiActionMenuOpen(p => !p)} title="More actions">
-            {I.more}
-          </button>
-          {aiActionMenuOpen && (
-            <div className="bulk-menu" style={{ bottom: '40px', right: 'auto', left: '0' }}>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); handleBulkDelete(); }} style={{ color: '#f87171' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                Delete
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setTargetFolderId(activeFolderId); handleBulkCopy(); }}>
-                {I.save} Duplicate
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setMoveModalOpen(true); }}>
-                {I.folder} Move to
-              </button>
-              <button className="bulk-menu__item" onClick={() => { setAiActionMenuOpen(false); setCopyModalOpen(true); }}>
-                {I.layers} Copy to
-              </button>
-            </div>
-          )}
-          
-          <button className="asset-selection-bar__btn" onClick={() => handleUseWithAI("upscaler", "upscale")}>
-            {I.spark} Use with AI
-          </button>
-          <button className="asset-selection-bar__btn" onClick={handleBulkDownload}>
-            {I.download} Download
-          </button>
-          <button className="asset-selection-bar__btn asset-selection-bar__btn--primary" onClick={() => setView("compare")}>
-            {I.eye} Compare Assets
-          </button>
-        </div>
-      </div>
+      {selectedAssetIds.size > 0 && selectedAssets.length > 0 && (
+        <AssetSelectionBar
+          selectedAssets={selectedAssets}
+          totalSizeBytes={selectedAssetsTotalSize}
+          onClear={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }}
+          onUseWithAI={() => handleUseWithAI("upscaler", "upscale")}
+          onMove={() => setMoveModalOpen(true)}
+          onCopy={() => setCopyModalOpen(true)}
+          onDownload={handleBulkDownload}
+          onDelete={handleBulkDelete}
+        />
+      )}
 
       {/* ── Move / Copy Folder Modal ── */}
       {(moveModalOpen || copyModalOpen) && (
@@ -1134,16 +1108,15 @@ function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
           >
             <div className="asset-table__thumb" style={{ position: 'relative', overflow: 'visible' }}>
               <div
-                className={`asset-card__checkbox ${isSelected ? 'asset-card__checkbox--checked' : ''}`}
+                className={`asset-checkbox ${isSelected ? 'asset-checkbox--checked' : ''}`}
                 onClick={(e) => onToggleSelect?.(a.id, e)}
                 title="Select asset"
                 style={{
                   opacity: isSelected ? 1 : undefined,
                   top: -4,
                   left: -4,
-                  width: 16,
-                  height: 16,
-                  background: isSelected ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
+                  width: 14,
+                  height: 14,
                 }}
               />
               {(() => {
@@ -1261,7 +1234,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
             onClick={() => setLeft(i)}
             style={{ position: 'relative', overflow: 'visible' }}>
             <div
-              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              className={`asset-checkbox ${selectedAssetIds?.has(a.id) ? 'asset-checkbox--checked' : ''}`}
               onClick={(e) => onToggleSelect?.(a.id, e)}
               title="Select asset"
               style={{
@@ -1270,7 +1243,6 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 left: -4,
                 width: 14,
                 height: 14,
-                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
               }}
             />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
@@ -1290,7 +1262,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
             onClick={() => setRight(i)}
             style={{ position: 'relative', overflow: 'visible' }}>
             <div
-              className={`asset-card__checkbox ${selectedAssetIds?.has(a.id) ? 'asset-card__checkbox--checked' : ''}`}
+              className={`asset-checkbox ${selectedAssetIds?.has(a.id) ? 'asset-checkbox--checked' : ''}`}
               onClick={(e) => onToggleSelect?.(a.id, e)}
               title="Select asset"
               style={{
@@ -1299,7 +1271,6 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 left: -4,
                 width: 14,
                 height: 14,
-                background: selectedAssetIds?.has(a.id) ? 'var(--accent)' : 'rgba(13, 15, 18, 0.8)',
               }}
             />
             <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
@@ -1566,6 +1537,78 @@ function AssetReviewModal({
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return "0.0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 0.1) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${mb.toFixed(2)} MB`;
+};
+
+function AssetSelectionBar({
+  selectedAssets,
+  totalSizeBytes,
+  onClear,
+  onUseWithAI,
+  onMove,
+  onCopy,
+  onDownload,
+  onDelete,
+}) {
+  const [moreOpen, setMoreOpen] = React.useState(false);
+
+  // Close dropdown on click outside
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, []);
+
+  return (
+    <div className="asset-selection-bar">
+      <div className="asset-selection-bar__left">
+        <button className="asset-selection-bar__clear" onClick={onClear} aria-label="Clear selection">
+          ×
+        </button>
+        <span className="asset-selection-bar__summary">
+          {selectedAssets.length} {selectedAssets.length === 1 ? "asset" : "assets"} selected
+        </span>
+        <span className="asset-selection-bar__meta">
+          · {formatFileSize(totalSizeBytes)}
+        </span>
+      </div>
+
+      <div className="asset-selection-bar__actions">
+        <button className="selection-action" onClick={onUseWithAI}>Use with AI</button>
+        <button className="selection-action" onClick={onMove}>Move to</button>
+        <button className="selection-action" onClick={onCopy}>Copy to</button>
+        <button className="selection-action" onClick={onDownload}>Download</button>
+
+        <div className="selection-more" ref={ref}>
+          <button className="selection-action selection-action--icon" onClick={() => setMoreOpen(v => !v)}>
+            …
+          </button>
+
+          {moreOpen && (
+            <div className="selection-more-menu">
+              <button onClick={() => { onDelete(); setMoreOpen(false); }}>Delete</button>
+              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Duplicate</button>
+              <button onClick={() => { onMove(); setMoreOpen(false); }}>Move to</button>
+              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Copy to</button>
+            </div>
+          )}
         </div>
       </div>
     </div>

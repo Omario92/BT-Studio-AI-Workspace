@@ -3001,199 +3001,218 @@ input, textarea { outline: none; }
    Frame.io-style Selectable Assets (v6.0)
    ============================================ */
 
+:root {
+  --bt-sidebar-width: 248px;
+  --bt-project-files-width: 256px;
+}
+
+.pm.pm--collapsed {
+  --bt-project-files-width: 0px;
+}
+
 .asset-card {
   position: relative;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .asset-card--selected {
-  outline: 2px solid var(--accent, #3b82f6) !important;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15), var(--sh-md) !important;
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 1px #4f46e5 !important;
+  outline: none !important;
 }
 
 /* Checkbox Container Overlay */
-.asset-card__checkbox {
+.asset-checkbox {
   position: absolute;
   top: 10px;
   left: 10px;
-  z-index: 10;
+  z-index: 5;
   width: 18px;
   height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(13, 15, 18, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
-  opacity: 0.4; /* Subtle always-visible state like the screenshot */
+  opacity: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: opacity 0.12s ease, background 0.12s, border-color 0.12s;
 }
 
-/* Show checkbox on card hover or when selected */
-.asset-card:hover .asset-card__checkbox,
-.asset-card--selected .asset-card__checkbox {
+/* Show checkbox on card hover or when selected for all views */
+.asset-card:hover .asset-checkbox,
+.asset-card--selected .asset-checkbox,
+.asset-table__row:hover .asset-checkbox,
+.asset-table__row--selected .asset-checkbox,
+.asset-compare__filmstrip-item:hover .asset-checkbox,
+.asset-compare__filmstrip-item.asset-card--selected .asset-checkbox {
   opacity: 1;
 }
 
 /* Checkbox Check State */
-.asset-card__checkbox--checked {
-  background: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
+.asset-checkbox--checked {
+  background: #4f46e5 !important;
+  border-color: #4f46e5 !important;
 }
 
-.asset-card__checkbox--checked::after {
+.asset-checkbox--checked::after {
   content: "";
   display: block;
   width: 4px;
   height: 8px;
   border: solid #FFFFFF;
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg) translate(-1px, -1px);
+  transform: rotate(45deg) translate(-0.5px, -1px);
 }
 
 /* Fixed Bottom Selection Bar */
 .asset-selection-bar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  transform: translateY(100%);
-  z-index: 9999;
-  width: 100%;
-  height: 48px;
+  left: calc(var(--bt-sidebar-width) + var(--bt-project-files-width) + 24px);
+  right: 24px;
+  bottom: 16px;
+  height: 56px;
+  z-index: 999;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: #0d0f12;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
-  color: #FFFFFF;
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.25s ease-in-out;
-}
+  gap: 16px;
 
-.asset-selection-bar--active {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
+  padding: 0 14px 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(12, 14, 20, 0.94);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #FFFFFF;
+  transition: all 0.25s ease-in-out;
 }
 
 .asset-selection-bar__left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  min-width: 0;
+  gap: 8px;
+  color: #f7f7f2;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
 }
 
 .asset-selection-bar__clear {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  transition: color 0.15s;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
 }
 
 .asset-selection-bar__clear:hover {
-  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
+.asset-selection-bar__summary {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.asset-selection-bar__meta {
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
 .asset-selection-bar__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  margin-left: auto;
 }
 
-.asset-selection-bar__btn {
-  height: 30px;
+.selection-action {
+  height: 34px;
   padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7f7f2;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  display: flex;
+  white-space: nowrap;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  transition: all 0.15s ease;
+  transition: background 0.15s;
 }
 
-.asset-selection-bar__btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  color: #FFFFFF;
-  border-color: rgba(255, 255, 255, 0.25);
+.selection-action:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
-.asset-selection-bar__btn--primary {
-  background: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
-  color: #FFFFFF;
+.selection-action--icon {
+  width: 36px;
+  padding: 0;
+  font-size: 16px;
 }
 
-.asset-selection-bar__btn--primary:hover:not(:disabled) {
-  background: #2563eb;
-  border-color: #2563eb;
+.selection-more {
+  position: relative;
 }
 
-.asset-selection-bar__btn--danger {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.25);
-}
-
-.asset-selection-bar__btn--danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.1);
-  border-color: #f87171;
-  color: #f87171;
-}
-
-.asset-selection-bar__btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Bulk Action Dropdown Menu */
-.bulk-menu {
+.selection-more-menu {
   position: absolute;
-  bottom: 40px;
   right: 0;
-  z-index: 10000;
-  width: 160px;
-  background: #1c1f24;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 4px 0;
-  box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5);
+  bottom: calc(100% + 10px);
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #252837;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  z-index: 100;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
-.bulk-menu__item {
-  padding: 8px 14px;
+.selection-more-menu button {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.85);
+  color: #f7f7f2;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.15s;
+  transition: background 0.15s;
 }
 
-.bulk-menu__item:hover {
+.selection-more-menu button:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: #FFFFFF;
+}
+
+@media (max-width: 1100px) {
+  .asset-selection-bar {
+    left: 16px !important;
+    right: 16px !important;
+  }
+
+  .asset-selection-bar__actions {
+    overflow-x: auto;
+  }
 }
 
 /* Move/Copy Folder Modal and Tree */
