@@ -37,8 +37,12 @@ function ProjectMgmt() {
 
   // Asset preview / review modal
   const [previewAsset, setPreviewAsset] = React.useState(null);
+  const [reviewLoading, setReviewLoading] = React.useState(false);
   const [reviewBusy, setReviewBusy] = React.useState(false);
   const [reviewError, setReviewError] = React.useState(null);
+  const [reviewComment, setReviewComment] = React.useState('');
+  const [sendingToReview, setSendingToReview] = React.useState(false);
+  const [addingComment, setAddingComment] = React.useState(false);
 
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
@@ -51,42 +55,106 @@ function ProjectMgmt() {
     setFolderModalOpen(true);
   };
 
-  const handleOpenAsset = (asset) => {
+  const refreshAssetGrid = React.useCallback(async () => {
+    if (!currentProject) return;
+    try {
+      const { data } = await projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId });
+      setAssets(data);
+    } catch (e) { console.warn('[refreshAssetGrid] failed:', e); }
+  }, [currentProject, activeFolderId]);
+
+  const reloadAssetDetail = async (assetId) => {
+    const [fullAsset, versions, reviews, comments] = await Promise.all([
+      assetsApi.getAsset(assetId),
+      assetsApi.getAssetVersions(assetId),
+      assetsApi.getAssetReviews(assetId),
+      assetsApi.getAssetComments(assetId),
+    ]);
+    return {
+      ...fullAsset,
+      versions: versions ?? [],
+      reviews: reviews ?? [],
+      comments: comments ?? [],
+      latestVersion: (versions && versions[0]) || null,
+    };
+  };
+
+  const handleOpenAsset = async (asset) => {
     setReviewError(null);
-    setPreviewAsset(asset);
+    setReviewComment('');
+    setPreviewAsset(asset); // show modal immediately with shallow data
+    setReviewLoading(true);
+    try {
+      const detailed = await reloadAssetDetail(asset.id);
+      setPreviewAsset(detailed);
+    } catch (err) {
+      setReviewError(err?.message || 'Failed to load asset details');
+    } finally {
+      setReviewLoading(false);
+    }
   };
 
   const handleClosePreview = () => {
-    if (reviewBusy) return;
+    if (reviewBusy || sendingToReview || addingComment) return;
     setPreviewAsset(null);
     setReviewError(null);
+    setReviewComment('');
+  };
+
+  const handleSendToReview = async () => {
+    if (!previewAsset) return;
+    setSendingToReview(true);
+    setReviewError(null);
+    try {
+      await assetsApi.sendToReview(previewAsset.id);
+      const detailed = await reloadAssetDetail(previewAsset.id);
+      setPreviewAsset(detailed);
+      refreshAssetGrid();
+    } catch (err) {
+      setReviewError(err?.message || 'Send to review failed');
+    } finally {
+      setSendingToReview(false);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!previewAsset || !reviewComment.trim()) return;
+    setAddingComment(true);
+    setReviewError(null);
+    try {
+      await assetsApi.addComment(previewAsset.id, reviewComment.trim());
+      setReviewComment('');
+      const detailed = await reloadAssetDetail(previewAsset.id);
+      setPreviewAsset(detailed);
+    } catch (err) {
+      setReviewError(err?.message || 'Add comment failed');
+    } finally {
+      setAddingComment(false);
+    }
   };
 
   const handleReviewAction = async (action) => {
     if (!previewAsset) return;
+    const versionId = previewAsset.latestVersion?.id;
+    if (!versionId) { setReviewError('No asset version available'); return; }
+
+    let comment = '';
+    if (action === 'reject' || action === 'request-revision') {
+      const prompt = action === 'reject' ? 'Reason for rejection?' : 'What revisions are needed?';
+      comment = (window.prompt(prompt) ?? '').trim();
+      if (!comment) return; // user cancelled
+    }
+
     setReviewBusy(true);
     setReviewError(null);
     try {
-      // Get the latest version id from the asset (fetch versions first)
-      const versions = await assetsApi.getAssetVersions(previewAsset.id);
-      const latest = versions?.[0];
-      if (!latest) throw new Error('No asset version found to review');
+      if (action === 'approve')               await assetsApi.approveVersion(versionId, comment);
+      else if (action === 'reject')           await assetsApi.rejectVersion(versionId, comment);
+      else if (action === 'request-revision') await assetsApi.requestRevision(versionId, comment);
 
-      const comment = action === 'approve' ? '' :
-        window.prompt(action === 'reject' ? 'Reason for rejection?' : 'What revisions are needed?') ?? '';
-      if ((action === 'reject' || action === 'request-revision') && !comment.trim()) {
-        setReviewBusy(false);
-        return; // user cancelled
-      }
-
-      if (action === 'approve')          await assetsApi.approveVersion(latest.id, comment);
-      else if (action === 'reject')      await assetsApi.rejectVersion(latest.id, comment);
-      else if (action === 'request-revision') await assetsApi.requestRevision(latest.id, comment);
-
-      // Refresh asset grid + close
-      const { data: refreshed } = await projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId });
-      setAssets(refreshed);
-      setPreviewAsset(null);
+      const detailed = await reloadAssetDetail(previewAsset.id);
+      setPreviewAsset(detailed);
+      refreshAssetGrid();
     } catch (err) {
       setReviewError(err?.message || 'Review action failed');
     } finally {
@@ -102,16 +170,19 @@ function ProjectMgmt() {
     setFolderCreating(true);
     setFolderError(null);
     try {
+      // Always create at root level — nested folders can be added via UI later
       const { data: newFolder } = await projectsApi.createFolder(currentProject.id, {
         name,
-        parentId: activeFolderId || undefined,
+        parentId: undefined,
       });
-      setFolders((prev) => [...prev, newFolder]);
+      // Refetch from backend so we always have the canonical tree (with children + counts)
+      const { data: freshFolders } = await projectsApi.getProjectFolders(currentProject.id);
+      setFolders(freshFolders);
       setActiveFolderId(newFolder.id);
       setFolderModalOpen(false);
       setNewFolderName('');
     } catch (err) {
-      setFolderError(err?.response?.data?.error?.message || err?.message || 'Failed to create folder');
+      setFolderError(err?.message || 'Failed to create folder');
     } finally {
       setFolderCreating(false);
     }
@@ -204,6 +275,20 @@ function ProjectMgmt() {
 
   // Build the unified sidebar tree list dynamically
   const dynamicTree = React.useMemo(() => {
+    const flattenFolders = (folderNodes, depth) =>
+      (folderNodes || []).flatMap(f => [
+        {
+          id: f.id,
+          label: f.name,
+          depth,
+          icon: I.folder,
+          count: f._count?.assets ?? 0,
+          active: activeFolderId === f.id,
+          type: 'folder',
+        },
+        ...flattenFolders(f.children || [], depth + 1),
+      ]);
+
     const list = [];
     projects.forEach(p => {
       const isActiveProject = currentProject && p.id === currentProject.id;
@@ -216,19 +301,9 @@ function ProjectMgmt() {
         count: p._count?.assets ?? 0,
         type: 'project',
       });
-      
+
       if (isActiveProject) {
-        folders.forEach(f => {
-          list.push({
-            id: f.id,
-            label: f.name,
-            depth: 1,
-            icon: I.folder,
-            count: f._count?.assets ?? 0,
-            active: activeFolderId === f.id,
-            type: 'folder',
-          });
-        });
+        list.push(...flattenFolders(folders, 1));
       }
     });
     return list;
@@ -435,7 +510,15 @@ function ProjectMgmt() {
               const creatorName = a.creator?.name ?? "System";
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
-                <div className="asset-card" key={a.id || i} onClick={() => handleOpenAsset(a)} style={{ cursor: 'pointer' }}>
+                <div
+                  className="asset-card asset-card--clickable"
+                  key={a.id || i}
+                  onClick={() => handleOpenAsset(a)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenAsset(a); } }}
+                  tabIndex={0}
+                  role="button"
+                  title="Open asset review"
+                  style={{ cursor: 'pointer' }}>
                   <div className="asset-card__thumb">
                     {a.fileUrl ? (
                       <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -518,110 +601,20 @@ function ProjectMgmt() {
 
       {/* ── Asset Preview / Review Modal ── */}
       {previewAsset && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(13,15,18,0.72)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 32,
-          }}
-          onClick={handleClosePreview}>
-          <div
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid var(--line)',
-              borderRadius: 14,
-              width: '100%',
-              maxWidth: 1100,
-              maxHeight: '90vh',
-              display: 'grid',
-              gridTemplateColumns: '1fr 320px',
-              overflow: 'hidden',
-              boxShadow: '0 20px 60px rgba(13,15,18,0.30)',
-            }}
-            onClick={(e) => e.stopPropagation()}>
-            {/* Left: full-size preview */}
-            <div style={{
-              background: 'var(--bg-canvas-2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              minHeight: 480, padding: 24, overflow: 'auto',
-            }}>
-              {previewAsset.fileUrl ? (
-                <img src={previewAsset.fileUrl} alt={previewAsset.name}
-                  style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />
-              ) : (
-                <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>No preview available</div>
-              )}
-            </div>
-
-            {/* Right: metadata + actions */}
-            <div style={{
-              padding: '22px 22px 18px',
-              display: 'flex', flexDirection: 'column', gap: 14,
-              borderLeft: '1px solid var(--line)',
-              overflow: 'auto',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{previewAsset.name}</h3>
-                  <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span className="chip chip--version">v{previewAsset.currentVersion ?? 1}</span>
-                    <span className={STATUS[previewAsset.status || 'DRAFT']?.[0] ?? 'chip chip--draft'}>
-                      {STATUS[previewAsset.status || 'DRAFT']?.[1] ?? previewAsset.status}
-                    </span>
-                  </div>
-                </div>
-                <button className="icon-btn icon-btn--light" onClick={handleClosePreview} title="Close" disabled={reviewBusy}>
-                  {I.close ?? '×'}
-                </button>
-              </div>
-
-              <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: '88px 1fr', gap: '6px 12px', fontSize: 12.5 }}>
-                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Type</dt>
-                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset.mimeType ?? '—'}</dd>
-                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Size</dt>
-                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>
-                  {previewAsset.fileSizeBytes ? `${(previewAsset.fileSizeBytes / 1024 / 1024).toFixed(2)} MB` : '—'}
-                </dd>
-                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Creator</dt>
-                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset.creator?.name ?? '—'}</dd>
-                <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Comments</dt>
-                <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{previewAsset._count?.comments ?? 0}</dd>
-              </dl>
-
-              {previewAsset.fileUrl && (
-                <a href={previewAsset.fileUrl} target="_blank" rel="noreferrer"
-                  className="btn btn--secondary"
-                  style={{ justifyContent: 'center' }}>
-                  Open in new tab
-                </a>
-              )}
-
-              <div style={{
-                marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--line-2)',
-                display: 'flex', flexDirection: 'column', gap: 8,
-              }}>
-                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.10em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
-                  Review
-                </div>
-                {reviewError && (
-                  <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>{reviewError}</div>
-                )}
-                <button className="btn btn--primary" disabled={reviewBusy} onClick={() => handleReviewAction('approve')}>
-                  {reviewBusy ? '…' : 'Approve'}
-                </button>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn--secondary" style={{ flex: 1 }} disabled={reviewBusy} onClick={() => handleReviewAction('request-revision')}>
-                    Request revision
-                  </button>
-                  <button className="btn btn--secondary" style={{ flex: 1, color: 'var(--st-failed)', borderColor: 'var(--st-failed-bg)' }} disabled={reviewBusy} onClick={() => handleReviewAction('reject')}>
-                    Reject
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AssetReviewModal
+          asset={previewAsset}
+          loading={reviewLoading}
+          busy={reviewBusy}
+          sending={sendingToReview}
+          addingComment={addingComment}
+          comment={reviewComment}
+          setComment={setReviewComment}
+          error={reviewError}
+          onClose={handleClosePreview}
+          onSendToReview={handleSendToReview}
+          onAddComment={handleAddComment}
+          onReviewAction={handleReviewAction}
+        />
       )}
     </div>
   );
@@ -773,6 +766,214 @@ function AssetCompare({ assets }) {
   );
 }
 
+// ─────────────────────────────────────────────
+//  Asset Review Modal
+// ─────────────────────────────────────────────
+function AssetReviewModal({
+  asset, loading, busy, sending, addingComment,
+  comment, setComment, error,
+  onClose, onSendToReview, onAddComment, onReviewAction,
+}) {
+  const status = asset.status || 'DRAFT';
+  const [chipCls, chipLabel] = STATUS[status] ?? ['chip chip--draft', status];
+  const canSendToReview = status === 'DRAFT' || status === 'WIP' || status === 'REVISION_REQUESTED';
+  const canDecide = status === 'IN_REVIEW';
+
+  const fmtBytes = (b) => b ? `${(b / 1024 / 1024).toFixed(2)} MB` : '—';
+  const fmtDate = (d) => d ? new Date(d).toLocaleString() : '—';
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(13,15,18,0.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onClose}>
+      <div
+        style={{
+          background: '#FFFFFF', border: '1px solid var(--line)',
+          borderRadius: 14, width: '100%', maxWidth: 1180, maxHeight: '92vh',
+          display: 'grid', gridTemplateColumns: '1fr 360px',
+          overflow: 'hidden', boxShadow: '0 20px 60px rgba(13,15,18,0.30)',
+        }}
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* ─── Left: full-size preview ─── */}
+        <div style={{
+          background: 'var(--bg-canvas-2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          minHeight: 480, padding: 24, overflow: 'auto',
+        }}>
+          {asset.fileUrl ? (
+            <img src={asset.fileUrl} alt={asset.name}
+              style={{ maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />
+          ) : (
+            <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>No preview available</div>
+          )}
+        </div>
+
+        {/* ─── Right: details + review actions ─── */}
+        <div style={{
+          padding: '20px 22px 18px',
+          display: 'flex', flexDirection: 'column', gap: 14,
+          borderLeft: '1px solid var(--line)',
+          overflow: 'auto',
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{asset.name}</h3>
+              <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="chip chip--version">v{asset.currentVersion ?? 1}</span>
+                <span className={chipCls}>{chipLabel}</span>
+                {loading && <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>loading…</span>}
+              </div>
+            </div>
+            <button className="icon-btn icon-btn--light" onClick={onClose} title="Close (Esc)" disabled={busy || sending || addingComment}>×</button>
+          </div>
+
+          {/* Metadata */}
+          <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: '88px 1fr', gap: '6px 12px', fontSize: 12.5 }}>
+            <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Type</dt>
+            <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{asset.mimeType ?? '—'}</dd>
+            <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Size</dt>
+            <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{fmtBytes(asset.fileSizeBytes)}</dd>
+            <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Creator</dt>
+            <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{asset.creator?.name ?? '—'}</dd>
+            <dt style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Created</dt>
+            <dd style={{ margin: 0, color: 'var(--ink-2)' }}>{fmtDate(asset.createdAt)}</dd>
+          </dl>
+
+          {asset.fileUrl && (
+            <a href={asset.fileUrl} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
+              Open in new tab
+            </a>
+          )}
+
+          {/* Versions */}
+          {asset.versions && asset.versions.length > 0 && (
+            <details style={{ borderTop: '1px solid var(--line-2)', paddingTop: 10 }}>
+              <summary style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.10em', color: 'var(--ink-4)', textTransform: 'uppercase', cursor: 'pointer' }}>
+                Versions ({asset.versions.length})
+              </summary>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {asset.versions.map(v => (
+                  <div key={v.id} style={{ fontSize: 12, color: 'var(--ink-2)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <span><span className="chip chip--version">v{v.versionNumber}</span> {v.status}</span>
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-4)' }}>{fmtDate(v.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {/* Reviews */}
+          {asset.reviews && asset.reviews.length > 0 && (
+            <details style={{ borderTop: '1px solid var(--line-2)', paddingTop: 10 }} open>
+              <summary style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.10em', color: 'var(--ink-4)', textTransform: 'uppercase', cursor: 'pointer' }}>
+                Reviews ({asset.reviews.length})
+              </summary>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {asset.reviews.map(r => (
+                  <div key={r.id} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '6px 8px', background: 'var(--bg-canvas)', borderRadius: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                      <strong>{r.reviewer?.name ?? 'Reviewer'}</strong>
+                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-4)' }}>{r.decision}</span>
+                    </div>
+                    {r.comment && <div style={{ marginTop: 4, color: 'var(--ink-3)' }}>{r.comment}</div>}
+                    <div style={{ marginTop: 4, fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-4)' }}>{fmtDate(r.createdAt)}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {/* Comments */}
+          <div style={{ borderTop: '1px solid var(--line-2)', paddingTop: 10 }}>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '0.10em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
+              Comments ({asset.comments?.length ?? 0})
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+              {(asset.comments ?? []).map(c => (
+                <div key={c.id} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '6px 8px', background: 'var(--bg-canvas)', borderRadius: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                    <strong>{c.author?.name ?? 'User'}</strong>
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-4)' }}>{fmtDate(c.createdAt)}</span>
+                  </div>
+                  <div style={{ marginTop: 4 }}>{c.body}</div>
+                </div>
+              ))}
+              {(!asset.comments || asset.comments.length === 0) && !loading && (
+                <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>No comments yet.</div>
+              )}
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                className="input"
+                placeholder="Add a comment…"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && comment.trim()) onAddComment(); }}
+                disabled={addingComment}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="btn btn--secondary"
+                onClick={onAddComment}
+                disabled={addingComment || !comment.trim()}>
+                {addingComment ? '…' : 'Post'}
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div style={{ fontSize: 12, color: 'var(--st-failed)', padding: '6px 8px', background: 'var(--st-failed-bg)', borderRadius: 6 }}>
+              {error}
+            </div>
+          )}
+
+          {/* Review actions — status-aware */}
+          <div style={{
+            marginTop: 'auto', paddingTop: 14, borderTop: '1px solid var(--line-2)',
+            display: 'flex', flexDirection: 'column', gap: 8,
+          }}>
+            {canSendToReview && (
+              <button className="btn btn--primary" disabled={sending} onClick={onSendToReview}>
+                {sending ? 'Sending…' : 'Send to Review'}
+              </button>
+            )}
+            {canDecide && (
+              <>
+                <button className="btn btn--primary" disabled={busy} onClick={() => onReviewAction('approve')}>
+                  {busy ? '…' : 'Approve'}
+                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn--secondary" style={{ flex: 1 }} disabled={busy} onClick={() => onReviewAction('request-revision')}>
+                    Request revision
+                  </button>
+                  <button className="btn btn--secondary" style={{ flex: 1, color: 'var(--st-failed)' }} disabled={busy} onClick={() => onReviewAction('reject')}>
+                    Reject
+                  </button>
+                </div>
+              </>
+            )}
+            {!canSendToReview && !canDecide && (
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', textAlign: 'center', padding: '8px 0' }}>
+                Status: <strong>{chipLabel}</strong> — no actions available
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.ProjectMgmt = ProjectMgmt;
 window.AssetList = AssetList;
 window.AssetCompare = AssetCompare;
+window.AssetReviewModal = AssetReviewModal;

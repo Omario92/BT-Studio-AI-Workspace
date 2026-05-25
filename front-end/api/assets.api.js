@@ -16,6 +16,16 @@ async function getAssetVersions(assetId) {
   return data.versions;
 }
 
+async function getAssetReviews(assetId) {
+  const { data } = await apiClient.get(`/api/assets/${assetId}/reviews`);
+  return data.reviews;
+}
+
+async function getAssetComments(assetId) {
+  const { data } = await apiClient.get(`/api/assets/${assetId}/comments`);
+  return data.comments;
+}
+
 async function addComment(assetId, body) {
   const { data } = await apiClient.post(`/api/assets/${assetId}/comments`, { body });
   return data.comment;
@@ -121,8 +131,8 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
 }
 
 const assetsApi = {
-  getAsset, getAssetVersions, addComment,
-  sendToReview, approveVersion, rejectVersion, requestRevision,
+  getAsset, getAssetVersions, getAssetReviews, getAssetComments,
+  addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
   uploadAsset,
 };
 window.assetsApi = assetsApi;
