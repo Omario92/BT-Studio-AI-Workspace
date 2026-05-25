@@ -363,9 +363,14 @@ async function uploadAsset(projectId, folderId, file, onProgress) {
   };
 }
 
+async function deleteAsset(id) {
+  await apiClient.delete(`/api/assets/${id}`);
+}
+
 const assetsApi = {
   getAsset, getAssetVersions, getAssetReviews, getAssetComments,
   addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
-  uploadAsset, getSignedUrl,
+  uploadAsset, getSignedUrl, deleteAsset,
 };
 window.assetsApi = assetsApi;
+

@@ -60,6 +60,21 @@ function ProjectMgmt() {
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewError, setPreviewError] = React.useState(null);
 
+  // Filter and Sorting states
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
+  const [filterType, setFilterType] = React.useState('all');
+  const [filterStatus, setFilterStatus] = React.useState('all');
+  const [sortBy, setSortBy] = React.useState('updatedAt');
+  const [sortOrder, setSortOrder] = React.useState('desc');
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   React.useEffect(() => {
     return () => {
       // Clean up object URLs on unmount
@@ -113,11 +128,20 @@ function ProjectMgmt() {
   const refreshAssetGrid = React.useCallback(async () => {
     if (!currentProject) return;
     try {
-      const { data } = await projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId });
+      const statusParam = filterStatus === 'all' ? undefined : filterStatus;
+      const typeParam = filterType === 'all' ? undefined : filterType;
+      const { data } = await projectsApi.getProjectAssets(currentProject.id, {
+        folderId: activeFolderId,
+        status: statusParam,
+        search: debouncedSearch || undefined,
+        type: typeParam,
+        sortBy,
+        sortOrder,
+      });
       setAssets(data);
       hydrateAssetThumbnails(data);
     } catch (e) { console.warn('[refreshAssetGrid] failed:', e); }
-  }, [currentProject, activeFolderId, hydrateAssetThumbnails]);
+  }, [currentProject, activeFolderId, filterStatus, filterType, debouncedSearch, sortBy, sortOrder, hydrateAssetThumbnails]);
 
   const reloadAssetDetail = async (assetId) => {
     const [fullAsset, versions, reviews, comments] = await Promise.all([
@@ -250,6 +274,22 @@ function ProjectMgmt() {
     }
   };
 
+  const handleDeleteAsset = async () => {
+    if (!previewAsset) return;
+    if (!window.confirm("Are you sure you want to permanently delete this asset?")) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      await assetsApi.deleteAsset(previewAsset.id);
+      setPreviewAsset(null);
+      setAssets(prev => prev.filter(a => a.id !== previewAsset.id));
+    } catch (err) {
+      setReviewError(err?.message || 'Failed to delete asset');
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
     if (!name) { setFolderError('Folder name is required'); return; }
@@ -377,11 +417,21 @@ function ProjectMgmt() {
       .finally(() => setLoading(false));
   }, [currentProject]);
 
-  // 3. Fetch assets whenever active folder changes
+  // 3. Fetch assets whenever active folder, filters, or sorting change
   React.useEffect(() => {
     if (!currentProject) return;
     setLoading(true);
-    projectsApi.getProjectAssets(currentProject.id, { folderId: activeFolderId })
+    const statusParam = filterStatus === 'all' ? undefined : filterStatus;
+    const typeParam = filterType === 'all' ? undefined : filterType;
+
+    projectsApi.getProjectAssets(currentProject.id, {
+      folderId: activeFolderId,
+      status: statusParam,
+      search: debouncedSearch || undefined,
+      type: typeParam,
+      sortBy,
+      sortOrder,
+    })
       .then(({ data, fromCache }) => {
         setOffline(fromCache);
         setAssets(data);
@@ -389,7 +439,7 @@ function ProjectMgmt() {
       })
       .catch(() => setOffline(true))
       .finally(() => setLoading(false));
-  }, [currentProject, activeFolderId, hydrateAssetThumbnails]);
+  }, [currentProject, activeFolderId, filterStatus, filterType, debouncedSearch, sortBy, sortOrder, hydrateAssetThumbnails]);
 
   // Build the unified sidebar tree list dynamically
   const dynamicTree = React.useMemo(() => {
@@ -620,6 +670,124 @@ function ProjectMgmt() {
           </div>
         </div>
 
+        {/* Premium Filter & Sorting Toolbar */}
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center',
+          padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid var(--line)', borderRadius: 10, marginBottom: 16,
+          fontSize: 13, color: 'var(--ink)'
+        }}>
+          {/* MimeType Pills */}
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-canvas)', padding: 3, borderRadius: 8, border: '1px solid var(--line)' }}>
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'image', label: 'Images' },
+              { id: 'video', label: 'Videos' },
+              { id: 'audio', label: 'Audios' },
+              { id: 'document', label: 'Docs' }
+            ].map(pill => (
+              <button
+                key={pill.id}
+                onClick={() => setFilterType(pill.id)}
+                style={{
+                  padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                  cursor: 'pointer', background: filterType === pill.id ? 'var(--primary)' : 'transparent',
+                  color: filterType === pill.id ? '#FFFFFF' : 'var(--ink-3)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Box */}
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-4)', pointerEvents: 'none' }}>🔍</span>
+            <input
+              type="text"
+              className="input"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search assets..."
+              style={{
+                width: '100%', paddingLeft: 30, paddingRight: searchQuery ? 28 : 10,
+                height: 32, borderRadius: 8, fontSize: 13, border: '1px solid var(--line)',
+                boxSizing: 'border-box'
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-4)',
+                  fontSize: 14, padding: 0
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Status Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: 'var(--ink-4)', fontSize: 12, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</span>
+            <select
+              className="input"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              style={{ height: 32, padding: '0 8px', borderRadius: 8, fontSize: 13, border: '1px solid var(--line)', minWidth: 100 }}
+            >
+              <option value="all">All</option>
+              <option value="DRAFT">Draft</option>
+              <option value="WIP">WIP</option>
+              <option value="IN_REVIEW">In Review</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+
+          {/* Sort Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: 'var(--ink-4)', fontSize: 12, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sort</span>
+            <select
+              className="input"
+              value={`${sortBy}:${sortOrder}`}
+              onChange={e => {
+                const [field, order] = e.target.value.split(':');
+                setSortBy(field);
+                setSortOrder(order);
+              }}
+              style={{ height: 32, padding: '0 8px', borderRadius: 8, fontSize: 13, border: '1px solid var(--line)', minWidth: 140 }}
+            >
+              <option value="updatedAt:desc">Newest</option>
+              <option value="updatedAt:asc">Oldest</option>
+              <option value="name:asc">Name (A-Z)</option>
+              <option value="name:desc">Name (Z-A)</option>
+              <option value="fileSizeBytes:desc">Size (Largest)</option>
+              <option value="fileSizeBytes:asc">Size (Smallest)</option>
+            </select>
+          </div>
+
+          {/* Reset Filters button */}
+          {(filterType !== 'all' || filterStatus !== 'all' || searchQuery || sortBy !== 'updatedAt' || sortOrder !== 'desc') && (
+            <button
+              onClick={() => {
+                setFilterType('all');
+                setFilterStatus('all');
+                setSearchQuery('');
+                setSortBy('updatedAt');
+                setSortOrder('desc');
+              }}
+              className="btn btn--secondary"
+              style={{ height: 32, padding: '0 12px', fontSize: 12, display: 'flex', alignItems: 'center', color: 'var(--st-failed)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
         {assets.length === 0 ? (
           <div className="card card--pad" style={{padding: 48, textAlign: "center", color:"var(--ink-3)"}}>
             <div style={{fontSize: 32, marginBottom: 12}}>{I.folder}</div>
@@ -743,6 +911,7 @@ function ProjectMgmt() {
           onClose={handleClosePreview}
           onAddComment={handleAddComment}
           onReviewAction={handleReviewAction}
+          onDelete={handleDeleteAsset}
           previewUrl={previewUrl}
           previewLoading={previewLoading}
           previewError={previewError}
@@ -922,6 +1091,7 @@ function AssetReviewModal({
   asset, loading, busy, addingComment,
   comment, setComment, error,
   onClose, onAddComment, onReviewAction,
+  onDelete,
   previewUrl, previewLoading, previewError,
 }) {
   console.log("[AssetReviewModal] render", asset.id);
@@ -1044,6 +1214,21 @@ function AssetReviewModal({
               Edit in AI Workspace
             </button>
           )}
+
+          <button
+            className="btn btn--secondary"
+            style={{ justifyContent: 'center', color: 'var(--st-failed)', borderColor: 'var(--st-failed)', marginTop: 4 }}
+            onClick={onDelete}
+            disabled={busy || addingComment}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+            Delete Asset
+          </button>
 
           {/* Versions */}
           {asset.versions && asset.versions.length > 0 && (

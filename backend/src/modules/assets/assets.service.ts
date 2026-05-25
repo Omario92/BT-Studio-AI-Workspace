@@ -16,6 +16,10 @@ export interface ListAssetsQuery {
   projectId?: string;
   folderId?: string;
   status?: AssetStatus;
+  search?: string;
+  type?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
   page?: string;
   limit?: string;
 }
@@ -32,12 +36,42 @@ export async function listAssets(query: ListAssetsQuery, _userId: string) {
   if (query.folderId) where.folderId = query.folderId;
   if (query.status) where.status = query.status;
 
+  if (query.search) {
+    where.name = {
+      contains: query.search,
+      mode: 'insensitive',
+    };
+  }
+
+  if (query.type && query.type !== 'all') {
+    if (query.type === 'document') {
+      where.AND = [
+        { NOT: { mimeType: { startsWith: 'image/' } } },
+        { NOT: { mimeType: { startsWith: 'video/' } } },
+        { NOT: { mimeType: { startsWith: 'audio/' } } },
+      ];
+    } else {
+      where.mimeType = {
+        startsWith: `${query.type}/`,
+      };
+    }
+  }
+
+  let orderBy: any = { updatedAt: 'desc' };
+  if (query.sortBy) {
+    const allowedFields = ['name', 'createdAt', 'updatedAt', 'fileSizeBytes'];
+    if (allowedFields.includes(query.sortBy)) {
+      const order = query.sortOrder === 'asc' ? 'asc' : 'desc';
+      orderBy = { [query.sortBy]: order };
+    }
+  }
+
   const [assets, total] = await Promise.all([
     prisma.asset.findMany({
       where,
       skip,
       take: limit,
-      orderBy: { updatedAt: 'desc' },
+      orderBy,
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
         folder: { select: { id: true, name: true } },

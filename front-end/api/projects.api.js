@@ -78,10 +78,14 @@ async function getProjectFolders(projectId) {
   }
 }
 
-async function getProjectAssets(projectId, { folderId, status, page = 1, limit = 50 } = {}) {
+async function getProjectAssets(projectId, { folderId, status, search, type, sortBy, sortOrder, page = 1, limit = 50 } = {}) {
   const params = new URLSearchParams({ page, limit });
-  if (folderId) params.set('folderId', folderId);
-  if (status)   params.set('status', status);
+  if (folderId)  params.set('folderId', folderId);
+  if (status)    params.set('status', status);
+  if (search)    params.set('search', search);
+  if (type)      params.set('type', type);
+  if (sortBy)    params.set('sortBy', sortBy);
+  if (sortOrder) params.set('sortOrder', sortOrder);
   try {
     const { data } = await apiClient.get(`/api/projects/${projectId}/assets?${params}`);
     return { data: data.assets, pagination: data.pagination, fromCache: false };
