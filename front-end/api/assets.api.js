@@ -397,8 +397,11 @@ async function bulkDownload(assetIds) {
   return data.files;
 }
 
-async function useWithAI(assetIds, { projectId, toolId, jobType, mode }) {
-  const { data } = await apiClient.post('/api/assets/use-with-ai', { assetIds, projectId, toolId, jobType, mode });
+async function useWithAI(assetIds, { projectId, toolId, jobType, mode, params }) {
+  const { data } = await apiClient.post('/api/assets/use-with-ai', {
+    assetIds, projectId, toolId, jobType, mode,
+    ...(params ? { params } : {}),
+  });
   return data;
 }
 

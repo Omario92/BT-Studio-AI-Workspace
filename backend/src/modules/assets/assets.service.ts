@@ -779,17 +779,36 @@ export async function useAssetsWithAI(
     if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
   }
 
+  // Tool-specific params (scale, faceEnhance, prompt, etc.) flow through `input.params`
+  const extraParams = (input as any).params ?? {};
+
+  // Resolve toolId — accept either a real CUID or a slug (e.g. "upscaler") for convenience
+  let resolvedToolId = input.toolId;
+  if (resolvedToolId) {
+    const byId = await prisma.aITool.findUnique({ where: { id: resolvedToolId } });
+    if (!byId) {
+      const bySlug = await prisma.aITool.findUnique({ where: { slug: resolvedToolId } });
+      if (!bySlug) throw Errors.NotFound(`AI Tool not found: "${resolvedToolId}"`);
+      resolvedToolId = bySlug.id;
+    }
+  }
+
   if (input.mode === 'single' || assetIds.length === 1) {
     const asset = assets[0];
     const job = await createJob({
       name: `AI Action on ${asset.name}`,
       type: input.jobType,
       projectId: input.projectId,
-      toolId: input.toolId,
+      toolId: resolvedToolId,
       params: {
+        // assetId is read by processAIJob to decide between "new version of source asset"
+        // (when present) vs "create a brand-new asset" (when absent). Pass it so the
+        // upscale/edit/bg-remove output lands as v2 on the source.
+        assetId: asset.id,
         sourceAssetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
+        ...extraParams,
       }
     }, userId);
     return { mode: 'single', job };
@@ -797,13 +816,15 @@ export async function useAssetsWithAI(
     const batchInputs = assets.map(asset => ({
       name: `AI Action on ${asset.name}`,
       params: {
+        assetId: asset.id,
         sourceAssetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
+        ...extraParams,
       }
     }));
 
-    const batch = await createBatch(input.projectId, input.toolId, batchInputs, userId);
+    const batch = await createBatch(input.projectId, resolvedToolId!, batchInputs, userId);
     return { mode: 'batch', batch };
   }
 }
