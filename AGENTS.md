@@ -12,6 +12,7 @@
 - Backend server: `npm run dev` or equivalent in `backend` directory.
 
 ## Recent Changes
+- (2026-05-25) Resolved mixed content and connection refused issues for asset images by adding a `resolveFileUrl` helper to dynamically rewrite localhost storage paths to the production backend. Synced front-end/index.html with front-end/screens/projects.jsx and verified changes.
 - (2026-05-25) Wired folders plus button, AssetReviewModal selection/onSelect properties, AssetList/AssetCompare integration, and quick debug logs in projects.jsx. Verified backend route registration for folderRoutes.
 
 

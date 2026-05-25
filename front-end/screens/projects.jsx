@@ -13,6 +13,15 @@ const STATUS = {
   generating: ["chip chip--generating","Generating"],
 };
 
+const resolveFileUrl = (url) => {
+  if (!url) return '';
+  if (url.includes('localhost:3001') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    const apiBaseUrl = (window.apiClient && window.apiClient.baseUrl) || 'https://bt-studio-ai-backend.up.railway.app';
+    return url.replace(/http:\/\/localhost:3001/g, apiBaseUrl);
+  }
+  return url;
+};
+
 function ProjectMgmt() {
   const [projects, setProjects] = React.useState([]);
   const [currentProject, setCurrentProject] = React.useState(null);
@@ -531,7 +540,7 @@ function ProjectMgmt() {
                   style={{ cursor: 'pointer' }}>
                   <div className="asset-card__thumb">
                     {a.fileUrl ? (
-                      <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={resolveFileUrl(a.fileUrl)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
                       <Placeholder tone={toneSet[i % toneSet.length]} label={a.name.split("_")[0]} style={{height:"100%", borderRadius:0}} />
                     )}
@@ -657,7 +666,7 @@ function AssetList({ assets, onSelect }) {
           <div className="asset-table__row" key={a.id || i} onClick={() => onSelect?.(a)} style={{ cursor: 'pointer' }}>
             <div className="asset-table__thumb">
               {a.fileUrl ? (
-                <img src={a.fileUrl} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={resolveFileUrl(a.fileUrl)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
               )}
@@ -719,7 +728,7 @@ function AssetCompare({ assets, onSelect }) {
           style={{ cursor: 'pointer' }}
         >
           {asset.fileUrl ? (
-            <img src={asset.fileUrl} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            <img src={resolveFileUrl(asset.fileUrl)} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           ) : (
             <Placeholder tone={toneSet[idx % toneSet.length]} label={asset.name.split("_")[0]} style={{height:"100%", borderRadius: 0}} />
           )}
@@ -825,7 +834,7 @@ function AssetReviewModal({
           minHeight: 480, padding: 24, overflow: 'auto',
         }}>
           {asset.fileUrl ? (
-            <img src={asset.fileUrl} alt={asset.name}
+            <img src={resolveFileUrl(asset.fileUrl)} alt={asset.name}
               style={{ maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', borderRadius: 6, boxShadow: 'var(--sh-md)' }} />
           ) : (
             <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>No preview available</div>
@@ -865,7 +874,7 @@ function AssetReviewModal({
           </dl>
 
           {asset.fileUrl && (
-            <a href={asset.fileUrl} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
+            <a href={resolveFileUrl(asset.fileUrl)} target="_blank" rel="noreferrer" className="btn btn--secondary" style={{ justifyContent: 'center' }}>
               Open in new tab
             </a>
           )}
