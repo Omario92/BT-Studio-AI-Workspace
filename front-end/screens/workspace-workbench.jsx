@@ -31,90 +31,118 @@ function UpscalerWorkbench({ tool, onBack }) {
   const [detail, setDetail] = React.useState(72);
   const [denoise, setDenoise] = React.useState(45);
 
-  // ─── Source asset from selection bar (Projects → Use with AI) ───
+  // V0.6 — preloaded source from Projects screen
   const [sourceAsset, setSourceAsset] = React.useState(() => {
     try {
-      const stored = localStorage.getItem("bt_selected_assets_for_ai");
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      const first = parsed?.assets?.[0];
-      return first ? { ...first, projectId: parsed.projectId } : null;
-    } catch (_e) { return null; }
+      const raw = localStorage.getItem("bt_selected_assets_for_ai");
+      if (!raw) return null;
+      const ctx = JSON.parse(raw);
+      const first = ctx?.assets?.[0];
+      if (!first) return null;
+      // If a tool was specified, only accept upscaler context; otherwise pass through.
+      if (ctx.toolId && ctx.toolId !== "upscaler" && ctx.jobType !== "IMAGE_UPSCALE") return null;
+      return { ...first, projectId: ctx.projectId || first.projectId };
+    } catch (e) { return null; }
   });
 
+  const [currentJob, setCurrentJob] = React.useState(null);
+  const [progress, setProgress] = React.useState(0);
+  const [outputResult, setOutputResult] = React.useState(null); // { fileUrl, assetId, assetVersionId, provider, mockFallback, displayUrl }
+  const [submitError, setSubmitError] = React.useState(null);
+  const pollTimerRef = React.useRef(null);
+
+  React.useEffect(() => () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); }, []);
+
   const clearSource = () => {
-    localStorage.removeItem("bt_selected_assets_for_ai");
+    try { localStorage.removeItem("bt_selected_assets_for_ai"); } catch (e) {}
     setSourceAsset(null);
+    setOutputResult(null);
+    setCurrentJob(null);
+    setProgress(0);
   };
 
-  // ─── Job state machine ──────────────────────────
-  // status: 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed'
-  const [jobStatus, setJobStatus] = React.useState("idle");
-  const [jobId, setJobId] = React.useState(null);
-  const [jobProgress, setJobProgress] = React.useState(0);
-  const [jobError, setJobError] = React.useState(null);
-  const [resultUrl, setResultUrl] = React.useState(null);
-  const [resultAssetId, setResultAssetId] = React.useState(null);
+  const isGenerating = currentJob && (currentJob.status === "QUEUED" || currentJob.status === "RUNNING");
+  const scaleFromFactor = (f) => f === "2x" ? 2 : f === "8x" ? 8 : 4;
 
-  // ─── Poll job until terminal status ─────────────
-  React.useEffect(() => {
-    if (!jobId || jobStatus === "completed" || jobStatus === "failed") return;
-    let cancelled = false;
-    const tick = async () => {
+  const pollJob = (jobId) => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(async () => {
       try {
-        const job = await window.jobsApi.getJob(jobId);
-        if (cancelled) return;
-        setJobProgress(job.progress ?? 0);
-        if (job.status === "RUNNING")   setJobStatus("running");
-        if (job.status === "QUEUED")    setJobStatus("queued");
+        const job = await jobsApi.getJob(jobId);
+        setCurrentJob(job);
+        setProgress(job.progress || 0);
         if (job.status === "COMPLETED") {
-          setJobStatus("completed");
-          const result = job.result || {};
-          if (result.fileUrl)   setResultUrl(result.fileUrl);
-          if (result.assetId)   setResultAssetId(result.assetId);
-        }
-        if (job.status === "FAILED") {
-          setJobStatus("failed");
-          setJobError(job.errorMsg || "Job failed");
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+          const r = job.result || {};
+          // Try to resolve a signed preview URL for the output
+          let displayUrl = r.fileUrl || null;
+          if (r.fileKey && typeof assetsApi !== "undefined") {
+            try {
+              const signed = await assetsApi.getSignedUrl(r.fileKey);
+              if (signed) displayUrl = signed;
+            } catch (e) {}
+          }
+          setOutputResult({ ...r, displayUrl });
+        } else if (job.status === "FAILED" || job.status === "CANCELLED") {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+          setSubmitError(job.errorMsg || "Upscale job failed");
         }
       } catch (err) {
-        if (cancelled) return;
-        setJobStatus("failed");
-        setJobError(err.message || "Failed to poll job status");
+        // Transient — keep polling
+        console.warn("[Upscaler] poll error:", err);
       }
-    };
-    tick(); // immediate first poll
-    const id = setInterval(tick, 2000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [jobId, jobStatus]);
+    }, 1500);
+  };
 
-  const busy = jobStatus === "submitting" || jobStatus === "queued" || jobStatus === "running";
-
-  const handleRunUpscale = async () => {
-    if (!sourceAsset || busy) return;
-    setJobStatus("submitting");
-    setJobError(null);
-    setResultUrl(null);
-    setResultAssetId(null);
-    setJobProgress(0);
+  const handleUpscale = async () => {
+    if (!sourceAsset) return;
+    setSubmitError(null);
+    setOutputResult(null);
+    setProgress(0);
+    setCurrentJob({ status: "QUEUED", type: "IMAGE_UPSCALE" });
     try {
-      const scale = factor === "2x" ? 2 : factor === "4x" ? 4 : 8;
-      const res = await window.assetsApi.useWithAI([sourceAsset.id], {
-        projectId: sourceAsset.projectId,
-        toolId: "upscaler",          // backend resolves slug → id
+      const projectId = sourceAsset.projectId || localStorage.getItem("bt_active_proj");
+      const result = await assetsApi.useWithAI([sourceAsset.id], {
+        projectId,
+        toolId: "upscaler",
         jobType: "IMAGE_UPSCALE",
         mode: "single",
-        params: { scale, faceEnhance: !!face },
+        params: {
+          assetId: sourceAsset.id,
+          sourceFileUrl: sourceAsset.sourceFileUrl || sourceAsset.previewUrl || sourceAsset.fileUrl,
+          sourceFileKey: sourceAsset.fileKey || null,
+          scale: scaleFromFactor(factor),
+          faceEnhance: !!face,
+          detail,
+          denoise,
+          outputPolicy: "NEW_VERSION_OF_SOURCE_ASSET",
+          providerPreference: ["dispatcher", "comfyui", "mock"],
+        },
       });
-      const newJobId = res?.job?.id;
-      if (!newJobId) throw new Error("No job id returned from /use-with-ai");
-      setJobId(newJobId);
-      setJobStatus("queued");
+      const job = result.job;
+      if (!job?.id) throw new Error("Job creation returned no id");
+      setCurrentJob(job);
+      pollJob(job.id);
     } catch (err) {
-      setJobStatus("failed");
-      setJobError(err.message || "Failed to start upscale job");
+      console.error(err);
+      setSubmitError(err?.message || "Failed to start upscale job");
+      setCurrentJob({ status: "FAILED", errorMsg: err?.message || "Failed to start upscale job" });
     }
   };
+
+  const openInProject = () => {
+    if (!outputResult) return;
+    try {
+      if (outputResult.assetId) localStorage.setItem("bt_focus_asset", outputResult.assetId);
+      if (outputResult.assetVersionId) localStorage.setItem("bt_focus_version", outputResult.assetVersionId);
+      localStorage.removeItem("bt_selected_assets_for_ai");
+      localStorage.setItem("bt_screen", "projects");
+      window.location.reload();
+    } catch (e) {}
+  };
+
 
   return (
     <>
@@ -127,29 +155,31 @@ function UpscalerWorkbench({ tool, onBack }) {
           <div className="up-side__body">
 
             <div className="field">
-              <label className="field__label" style={{color:"var(--ink-on-dark)"}}>Source image</label>
+              <label className="field__label" style={{color:"var(--ink-on-dark)"}}>
+                Source image
+                {sourceAsset && (
+                  <span className="field__hint" style={{marginLeft: "auto"}}>PRELOADED FROM PROJECTS</span>
+                )}
+              </label>
               <div style={{
                 border: "1px solid var(--line-on-dark-2)",
                 background: "var(--bg-input-dark)",
                 borderRadius: 10, padding: 8,
                 display: "flex", alignItems: "center", gap: 10
               }}>
-                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: 'var(--bg-canvas-2)'}}>
-                  {sourceAsset?.fileUrl ? (
-                    <img src={sourceAsset.fileUrl} alt={sourceAsset.name}
-                         style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas-2)"}}>
+                  {(sourceAsset?.previewUrl || sourceAsset?.fileUrl) ? (
+                    <img src={sourceAsset.previewUrl || sourceAsset.fileUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "cover"}} />
                   ) : (
                     <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
                   )}
                 </div>
                 <div style={{flex: 1, minWidth: 0}}>
-                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap'}} title={sourceAsset?.name}>
+                  <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap"}} title={sourceAsset?.name || "No source"}>
                     {sourceAsset?.name || "No source selected"}
                   </div>
                   <div style={{fontFamily:"var(--f-mono)", fontSize: 10, color:"var(--ink-on-dark-3)", marginTop: 2}}>
-                    {sourceAsset
-                      ? (sourceAsset.mimeType || 'image/png')
-                      : "Pick from Projects → Use with AI"}
+                    {sourceAsset ? `${sourceAsset.mimeType || "image/png"} · v${sourceAsset.currentVersion ?? 1}` : "Pick from Projects → Use with AI"}
                   </div>
                 </div>
                 {sourceAsset && (
@@ -234,23 +264,16 @@ function UpscalerWorkbench({ tool, onBack }) {
             <button
               className="btn btn--secondary"
               style={{flex:1, justifyContent:"center", background:"var(--bg-input-dark)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}
-              disabled={busy}
-              onClick={() => { setFactor("4x"); setFace(true); setDetail(72); setDenoise(45); }}>
-              Reset
-            </button>
+              disabled={isGenerating}
+              onClick={() => { setFactor("4x"); setFace(true); setDetail(72); setDenoise(45); }}>Reset</button>
             <button
               className="btn btn--primary"
               style={{flex:2, justifyContent:"center"}}
-              disabled={busy || !sourceAsset}
-              onClick={handleRunUpscale}
-              title={!sourceAsset ? "Pick an asset from Projects → Use with AI first" : ""}>
-              {I.spark}
-              <span>
-                {jobStatus === "submitting" ? "Starting…"
-                  : jobStatus === "queued"  ? "Queued…"
-                  : jobStatus === "running" ? `Upscaling… ${jobProgress}%`
-                  : "Upscale"}
-              </span>
+              onClick={handleUpscale}
+              disabled={!sourceAsset || isGenerating}
+              title={!sourceAsset ? "Pick an image from Projects → Use with AI" : (isGenerating ? "Job running..." : "Run upscale")}
+            >
+              {I.spark}<span>{isGenerating ? `${currentJob?.status || "RUNNING"} · ${progress}%` : "Upscale"}</span>
             </button>
           </div>
         </aside>
@@ -259,14 +282,14 @@ function UpscalerWorkbench({ tool, onBack }) {
         <section className="up-canvas">
           <header className="up-canvas__head">
             <span className="lbl">Before / After</span>
-            {jobStatus === "completed" && (
-              <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>UPSCALE COMPLETE</span>
-            )}
-            {(jobStatus === "queued" || jobStatus === "running") && (
-              <span className="chip chip--generating"><span className="dot-status dot-status--generating"/>{jobStatus === "queued" ? "QUEUED" : `RUNNING ${jobProgress}%`}</span>
-            )}
-            {jobStatus === "failed" && (
+            {outputResult ? (
+              <span className="chip chip--approved"><span className="dot-status dot-status--approved"/>UPSCALE COMPLETE{outputResult.mockFallback ? " · MOCK" : ""}</span>
+            ) : isGenerating ? (
+              <span className="chip chip--generating"><span className="dot-status dot-status--generating"/>{currentJob.status} · {progress}%</span>
+            ) : submitError ? (
               <span className="chip chip--failed"><span className="dot-status dot-status--failed"/>FAILED</span>
+            ) : (
+              <span className="chip chip--draft"><span className="dot-status dot-status--draft"/>READY</span>
             )}
             <span style={{flex: 1}} />
             <div className="segmented">
@@ -277,21 +300,34 @@ function UpscalerWorkbench({ tool, onBack }) {
           </header>
           <div className="up-canvas__stage">
             <div className="compare">
-              <div className="before">
-                {sourceAsset?.fileUrl ? (
-                  <img src={sourceAsset.fileUrl} alt="before" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+              <div className="before" style={{position: "relative", overflow: "hidden"}}>
+                {(sourceAsset?.previewUrl || sourceAsset?.fileUrl) ? (
+                  <img src={sourceAsset.previewUrl || sourceAsset.fileUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "contain"}} />
                 ) : (
                   <Placeholder tone="violet" label="" />
                 )}
-                <span className="compare__tag" style={{left: 12}}>BEFORE</span>
+                <span className="compare__tag" style={{left: 12}}>BEFORE · {sourceAsset?.name || "no source"}</span>
               </div>
-              <div className="after">
-                {resultUrl ? (
-                  <img src={resultUrl} alt="after" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+              <div className="after" style={{position: "relative", overflow: "hidden"}}>
+                {outputResult?.displayUrl ? (
+                  <img src={outputResult.displayUrl} alt="Upscaled output" style={{width: "100%", height: "100%", objectFit: "contain"}} />
+                ) : isGenerating ? (
+                  <div style={{position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(13,15,18,0.85)", gap: 10}}>
+                    <span className="dot-status dot-status--generating" style={{width: 10, height: 10}} />
+                    <div style={{color: "#fff", fontFamily: "var(--f-mono)", fontSize: 12}}>{currentJob.status} · {progress}%</div>
+                    <div style={{width: 220, height: 4, background: "var(--line-on-dark-2)", borderRadius: 2, overflow: "hidden"}}>
+                      <div style={{width: `${progress}%`, height: "100%", background: "var(--accent)", transition: "width 200ms ease"}} />
+                    </div>
+                  </div>
+                ) : submitError ? (
+                  <div style={{position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(180,50,31,0.1)", gap: 6, padding: 24, textAlign: "center"}}>
+                    <div style={{color: "var(--st-failed)", fontWeight: 600}}>Upscale failed</div>
+                    <div style={{fontSize: 12, color: "var(--ink-3)"}}>{submitError}</div>
+                  </div>
                 ) : (
-                  <Placeholder tone="violet" label={busy ? "GENERATING…" : "AWAITING UPSCALE"} />
+                  <Placeholder tone="violet" label="" />
                 )}
-                <span className="compare__tag" style={{right: 12}}>AFTER · {factor}</span>
+                <span className="compare__tag" style={{right: 12}}>AFTER · {factor === "2x" ? "2048" : factor === "4x" ? "4096" : "8192"}px</span>
               </div>
               <div className="compare__handle"/>
             </div>
@@ -299,27 +335,26 @@ function UpscalerWorkbench({ tool, onBack }) {
           <div className="up-canvas__foot">
             <div className="up-stats">
               <span>Scale: <b>{factor}</b></span>
-              <span>Face enhance: <b>{face ? "on" : "off"}</b></span>
-              {jobError && (
-                <span style={{color: "var(--st-failed)"}}>⚠ {jobError}</span>
-              )}
+              <span>Face enhance: <b>{face ? "ON" : "OFF"}</b></span>
+              <span>Detail: <b>{detail}%</b></span>
+              <span>Denoise: <b>{denoise}%</b></span>
+              {outputResult?.provider && <span>Provider: <b>{outputResult.provider}</b></span>}
+              {outputResult?.assetVersionId && <span style={{color: "var(--st-approved)"}}><b>Created new AssetVersion</b></span>}
+              {submitError && <span style={{color: "var(--st-failed)"}}>⚠ {submitError}</span>}
             </div>
             <span className="spacer" />
-            {resultUrl && (
-              <a className="btn btn--secondary" href={resultUrl} target="_blank" rel="noreferrer">
-                {I.download}<span>Open output</span>
+            {outputResult?.displayUrl && (
+              <a className="btn btn--secondary" href={outputResult.displayUrl} target="_blank" rel="noreferrer">
+                {I.download}<span>Download</span>
               </a>
             )}
             <button
               className="btn btn--primary"
-              disabled={!resultAssetId}
-              onClick={() => {
-                if (!resultAssetId) return;
-                localStorage.setItem("bt_screen", "projects");
-                localStorage.setItem("bt_focus_asset", resultAssetId);
-                window.location.reload();
-              }}>
-              {I.folder}<span>Open in project</span>
+              onClick={openInProject}
+              disabled={!outputResult || !outputResult.assetId}
+              title={!outputResult ? "Run upscale first" : "Jump to the new version in Projects"}
+            >
+              {I.folder}<span>Open in Project</span>
             </button>
           </div>
         </section>

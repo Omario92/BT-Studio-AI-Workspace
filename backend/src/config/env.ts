@@ -50,6 +50,14 @@ export const env = {
   COMFYUI_DEFAULT_WORKFLOW_UPSCALE: process.env.COMFYUI_DEFAULT_WORKFLOW_UPSCALE ?? '',
   COMFYUI_DEFAULT_WORKFLOW_IMAGE_EDIT: process.env.COMFYUI_DEFAULT_WORKFLOW_IMAGE_EDIT ?? '',
 
+  // comfy-dispatcher (external HTTP service auto-deploying RunPod ComfyUI pods)
+  DISPATCHER_BASE_URL: process.env.DISPATCHER_BASE_URL ?? '',
+  DISPATCHER_API_KEY: process.env.DISPATCHER_API_KEY ?? '',
+  DISPATCHER_CALLBACK_URL: process.env.DISPATCHER_CALLBACK_URL ?? '',
+  COMFYUI_UPSCALE_WORKFLOW_PATH: process.env.COMFYUI_UPSCALE_WORKFLOW_PATH ?? '',
+  COMFYUI_UPSCALE_WORKFLOW_JSON: process.env.COMFYUI_UPSCALE_WORKFLOW_JSON ?? '',
+  AI_PROVIDER_PRIORITY: process.env.AI_PROVIDER_PRIORITY ?? 'dispatcher,comfyui,mock',
+
   isDev: (process.env.NODE_ENV ?? 'development') === 'development',
   isProd: process.env.NODE_ENV === 'production',
 } as const;
