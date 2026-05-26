@@ -6,6 +6,7 @@ import {
   sendToReview, approveVersion, rejectVersion, requestRevision,
   getVersion, getReviews, getComments,
   bulkDeleteAssets, bulkMoveAssets, bulkCopyAssets, bulkDownloadAssets, useAssetsWithAI,
+  renameAsset, bulkDuplicateAssets,
 } from './assets.service';
 
 export async function assetRoutes(fastify: FastifyInstance) {
@@ -276,6 +277,56 @@ export async function assetRoutes(fastify: FastifyInstance) {
     const body = req.body as any;
     const result = await useAssetsWithAI(body.assetIds, body, userId);
     return reply.status(201).send(result);
+  });
+
+  // PATCH /assets/:id
+  fastify.patch('/:id', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Rename an asset',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string' }
+        }
+      },
+      body: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { name } = req.body as { name: string };
+    const userId = (req.user as any).sub;
+    const asset = await renameAsset(id, userId, name);
+    return reply.send({ asset });
+  });
+
+  // POST /assets/bulk-duplicate
+  fastify.post('/bulk-duplicate', {
+    ...auth,
+    schema: {
+      tags: ['Assets'],
+      summary: 'Bulk duplicate assets into their same respective folders',
+      body: {
+        type: 'object',
+        required: ['assetIds'],
+        properties: {
+          assetIds: { type: 'array', items: { type: 'string' } }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const userId = (req.user as any).sub;
+    const { assetIds } = req.body as { assetIds: string[] };
+    const copiedAssets = await bulkDuplicateAssets(assetIds, userId);
+    return reply.send({ copiedAssets });
   });
 }
 

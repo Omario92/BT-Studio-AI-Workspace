@@ -405,11 +405,22 @@ async function useWithAI(assetIds, { projectId, toolId, jobType, mode, params })
   return data;
 }
 
+async function renameAsset(assetId, data) {
+  const res = await apiClient.patch(`/api/assets/${assetId}`, data);
+  return res.data?.asset || res.data;
+}
+
+async function bulkDuplicate(assetIds) {
+  const res = await apiClient.post("/api/assets/bulk-duplicate", { assetIds });
+  return res.data;
+}
+
 const assetsApi = {
   getAsset, getAssetVersions, getAssetReviews, getAssetComments,
   addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
   uploadAsset, getSignedUrl, deleteAsset,
   bulkDelete, bulkMove, bulkCopy, bulkDownload, useWithAI,
+  renameAsset, bulkDuplicate,
 };
 window.assetsApi = assetsApi;
 
