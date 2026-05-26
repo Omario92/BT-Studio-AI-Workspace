@@ -3220,14 +3220,210 @@ input, textarea { outline: none; }
 /* filter popover rules (v7.0) */
 .asset-filter-popover {
   position: absolute;
-  z-index: 90;
+  right: 0;
+  top: calc(100% + 8px);
   width: 280px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #181b22;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  padding: 14px;
+  border-radius: 14px;
+  z-index: 90;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.22);
 }
+
+[data-theme="light"] .asset-filter-popover {
+  background: #ffffff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  color: #111827;
+}
+
+[data-theme="dark"] .asset-filter-popover {
+  background: #151821;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #f8fafc;
+}
+
+.asset-filter-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.asset-filter-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+[data-theme="light"] .asset-filter-label {
+  color: #667085;
+}
+
+[data-theme="dark"] .asset-filter-label {
+  color: rgba(255,255,255,0.58);
+}
+
+.asset-filter-select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+[data-theme="light"] .asset-filter-select {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid rgba(16, 24, 40, 0.18);
+}
+
+[data-theme="dark"] .asset-filter-select {
+  background: #090b10;
+  color: #f8fafc;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.asset-filter-select option {
+  color: #111827;
+  background: #ffffff;
+}
+
+[data-theme="dark"] .asset-filter-select option {
+  color: #f8fafc;
+  background: #111827;
+}
+
+.asset-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.asset-filter-clear,
+.asset-filter-close {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+[data-theme="light"] .asset-filter-clear {
+  color: #475467;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+[data-theme="dark"] .asset-filter-clear {
+  color: rgba(255,255,255,0.72);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.asset-filter-close {
+  color: #ffffff;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+}
+
+/* Notifications rules */
+.topbar-notification {
+  position: relative;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ef4444;
+}
+
+.notification-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 340px;
+  border-radius: 14px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+}
+
+[data-theme="light"] .notification-popover {
+  background: #ffffff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  color: #111827;
+}
+
+[data-theme="dark"] .notification-popover {
+  background: #151821;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #f8fafc;
+}
+
+.notification-popover__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(128,128,128,0.16);
+}
+
+.notification-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(128,128,128,0.12);
+  cursor: pointer;
+  text-align: left;
+}
+
+.notification-item:hover {
+  background: rgba(59,130,246,0.08);
+}
+
+.notification-item--unread .notification-item__title::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #2563eb;
+  margin-right: 8px;
+}
+
+.notification-item__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notification-item__description {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.notification-item__time {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+/* Search Highlights */
+.asset-card--search-hit {
+  outline: 2px solid #2563eb !important;
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.5) !important;
+  transition: outline 0.15s ease, box-shadow 0.15s ease;
+}
+
 
 @media (max-width: 1100px) {
   .asset-selection-bar {
