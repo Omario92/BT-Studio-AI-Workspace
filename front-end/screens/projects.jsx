@@ -143,6 +143,18 @@ function ProjectMgmt({ searchQuery = "" }) {
   // Object URL cache to prevent memory leaks
   const objectUrlsRef = React.useRef([]);
 
+  // Create menu and new project states
+  const [createMenuOpen, setCreateMenuOpen] = React.useState(false);
+  const createMenuRef = React.useRef(null);
+
+  const [projectModalOpen, setProjectModalOpen] = React.useState(false);
+  const [newProjectName, setNewProjectName] = React.useState('');
+  const [newProjectClient, setNewProjectClient] = React.useState('');
+  const [newProjectDescription, setNewProjectDescription] = React.useState('');
+  const [newProjectTone, setNewProjectTone] = React.useState('blue');
+  const [projectCreating, setProjectCreating] = React.useState(false);
+  const [projectError, setProjectError] = React.useState(null);
+
   // New folder modal
   const [folderModalOpen, setFolderModalOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState('');
@@ -171,11 +183,37 @@ function ProjectMgmt({ searchQuery = "" }) {
     };
   }, []);
 
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (createMenuRef.current && !createMenuRef.current.contains(e.target)) {
+        setCreateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
   };
 
+  const handleOpenCreateMenu = (e) => {
+    e.stopPropagation();
+    setCreateMenuOpen(v => !v);
+  };
+
+  const handleOpenProjectModal = () => {
+    setCreateMenuOpen(false);
+    setNewProjectName('');
+    setNewProjectClient('');
+    setNewProjectDescription('');
+    setNewProjectTone('blue');
+    setProjectError(null);
+    setProjectModalOpen(true);
+  };
+
   const handleOpenFolderModal = () => {
+    setCreateMenuOpen(false);
     if (!currentProject) return;
     console.log("[ProjectFiles] New folder clicked");
     setNewFolderName('');
@@ -461,6 +499,31 @@ function ProjectMgmt({ searchQuery = "" }) {
     }
   };
 
+  function resolveAssetSourceRefs(asset, detailedAsset) {
+    const d = detailedAsset || {};
+    const latestVersion = d.latestVersion || d.versions?.[0] || asset.latestVersion || asset.versions?.[0] || null;
+
+    const fileKey =
+      d.metadata?.fileKey ||
+      latestVersion?.params?.fileKey ||
+      latestVersion?.metadata?.fileKey ||
+      asset.metadata?.fileKey ||
+      asset.fileKey ||
+      null;
+
+    const fileUrl =
+      latestVersion?.fileUrl ||
+      d.fileUrl ||
+      asset.fileUrl ||
+      asset.previewUrl ||
+      asset.thumbnailUrl ||
+      asset.metadata?.thumbnailSignedUrl ||
+      asset.metadata?.thumbnailUrl ||
+      null;
+
+    return { fileKey, fileUrl, latestVersion };
+  }
+
   const handleUseWithAI = async (toolId, jobType) => {
     if (selectedAssetIds.size === 0) return;
     setBulkActionBusy(true);
@@ -482,21 +545,57 @@ function ProjectMgmt({ searchQuery = "" }) {
       // Pre-resolve signed preview URL for assets that have a fileKey so the
       // workbench can render the source image instantly.
       const enriched = await Promise.all(selectedAssets.map(async (a) => {
-        const fileKey = a.metadata?.fileKey || null;
-        let previewUrl = null;
-        if (fileKey && typeof assetsApi !== "undefined") {
-          try { previewUrl = await assetsApi.getSignedUrl(fileKey); } catch (e) {}
+        let assetDetail = {};
+        let versions = [];
+        try {
+          if (typeof assetsApi !== "undefined" && assetsApi.getAsset) {
+            assetDetail = await assetsApi.getAsset(a.id);
+          }
+        } catch (e) {
+          console.warn("[UseWithAI] Failed to fetch asset detail for", a.id, e);
         }
+        try {
+          if (typeof assetsApi !== "undefined" && assetsApi.getAssetVersions) {
+            versions = await assetsApi.getAssetVersions(a.id);
+          }
+        } catch (e) {
+          console.warn("[UseWithAI] Failed to fetch versions for", a.id, e);
+        }
+
+        const detailed = {
+          ...assetDetail,
+          versions,
+          latestVersion: versions?.[0] || assetDetail?.versions?.[0] || null
+        };
+
+        const { fileKey, fileUrl, latestVersion } = resolveAssetSourceRefs(a, detailed);
+
+        let signedUrl = null;
+        if (fileKey && typeof assetsApi !== "undefined" && assetsApi.getSignedUrl) {
+          try {
+            signedUrl = await assetsApi.getSignedUrl(fileKey);
+          } catch (e) {
+            console.warn("[UseWithAI] Failed to get signed URL for", fileKey, e);
+          }
+        }
+
+        const previewUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const sourceFileUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const finalFileUrl = resolveFileUrl(fileUrl) || null;
+        const currentVersion = latestVersion?.versionNumber || latestVersion?.version || detailed?.currentVersion || a.currentVersion || 1;
+
+        console.log("[UseWithAI] enriched asset", { id: a.id, name: a.name, fileKey, hasPreviewUrl: !!previewUrl });
+
         return {
           id: a.id,
           name: a.name,
           mimeType: a.mimeType,
           fileKey,
-          fileUrl: a.fileUrl || null,
-          previewUrl: previewUrl || resolveFileUrl(a.fileUrl) || null,
-          sourceFileUrl: previewUrl || resolveFileUrl(a.fileUrl) || null,
+          fileUrl: finalFileUrl,
+          previewUrl,
+          sourceFileUrl,
           projectId: a.projectId || currentProject.id,
-          currentVersion: a.currentVersion ?? 1,
+          currentVersion
         };
       }));
 
@@ -582,6 +681,54 @@ function ProjectMgmt({ searchQuery = "" }) {
       setBulkActionBusy(false);
     }
   }
+
+  const handleCreateProject = async () => {
+    const name = newProjectName.trim();
+    const client = newProjectClient.trim();
+
+    if (!name) {
+      setProjectError('Project name is required');
+      return;
+    }
+
+    if (!client) {
+      setProjectError('Client / Brand is required');
+      return;
+    }
+
+    setProjectCreating(true);
+    setProjectError(null);
+
+    try {
+      const { data: project } = await projectsApi.createProject({
+        name,
+        client,
+        description: newProjectDescription.trim() || undefined,
+        tone: newProjectTone || undefined,
+      });
+
+      setProjects(prev => [project, ...prev]);
+      setCurrentProject(project);
+      localStorage.setItem('bt_active_proj', project.id);
+
+      const { data: freshFolders } = await projectsApi.getProjectFolders(project.id);
+      setFolders(freshFolders || []);
+
+      const genFolder = (freshFolders || []).find(f => f.name === 'Generated' || f.name === 'gen');
+      const defaultFolder = genFolder || (freshFolders || [])[0] || null;
+      setActiveFolderId(defaultFolder ? defaultFolder.id : null);
+
+      setProjectModalOpen(false);
+      setNewProjectName('');
+      setNewProjectClient('');
+      setNewProjectDescription('');
+      setNewProjectTone('blue');
+    } catch (err) {
+      setProjectError(err?.message || 'Failed to create project');
+    } finally {
+      setProjectCreating(false);
+    }
+  };
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
@@ -929,15 +1076,48 @@ function ProjectMgmt({ searchQuery = "" }) {
       <aside className="pm__tree">
         <div className="tree__header">
           <h3>Project Files</h3>
-          <button
-            className="icon-btn"
-            type="button"
-            onClick={handleOpenFolderModal}
-            title="New Folder"
-            aria-label="New Folder"
-          >
-            {I.plus}
-          </button>
+          <div className="tree-create-menu" ref={createMenuRef}>
+            <button
+              className={`icon-btn ${createMenuOpen ? 'active' : ''}`}
+              type="button"
+              onClick={handleOpenCreateMenu}
+              title="Create"
+              aria-label="Create project or folder"
+              aria-expanded={createMenuOpen}
+            >
+              {I.plus}
+            </button>
+
+            {createMenuOpen && (
+              <div className="tree-create-menu__popover">
+                <button
+                  type="button"
+                  className="tree-create-menu__item"
+                  onClick={handleOpenProjectModal}
+                >
+                  <span className="tree-create-menu__icon">{I.folder}</span>
+                  <span>
+                    <strong>New Project</strong>
+                    <small>Create a new workspace project</small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="tree-create-menu__item"
+                  onClick={handleOpenFolderModal}
+                  disabled={!currentProject}
+                  title={!currentProject ? 'Select a project first' : 'Create folder in current project'}
+                >
+                  <span className="tree-create-menu__icon">{I.folder}</span>
+                  <span>
+                    <strong>New Folder</strong>
+                    <small>Add folder to current project</small>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn icon-btn--light"
             title="Hide file tree"
@@ -1318,6 +1498,117 @@ function ProjectMgmt({ searchQuery = "" }) {
               </button>
               <button className="btn btn--primary" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
                 {folderCreating ? 'Creating…' : 'Create Folder'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New Project Modal ── */}
+      {projectModalOpen && (
+        <div
+          className="move-copy-modal"
+          onClick={() => {
+            if (!projectCreating) setProjectModalOpen(false);
+          }}
+        >
+          <div
+            className="move-copy-modal__card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 420 }}
+          >
+            <div className="move-copy-modal__head">
+              <h3>New Project</h3>
+              <button
+                className="icon-btn icon-btn--light"
+                onClick={() => setProjectModalOpen(false)}
+                disabled={projectCreating}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="move-copy-modal__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Project Name</span>
+                <input
+                  autoFocus
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Huda Summer Campaign"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateProject();
+                    if (e.key === 'Escape') setProjectModalOpen(false);
+                  }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Client / Brand</span>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Huda / Carlsberg"
+                  value={newProjectClient}
+                  onChange={(e) => setNewProjectClient(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateProject();
+                    if (e.key === 'Escape') setProjectModalOpen(false);
+                  }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Description</span>
+                <textarea
+                  className="textarea"
+                  placeholder="Optional project description..."
+                  value={newProjectDescription}
+                  onChange={(e) => setNewProjectDescription(e.target.value)}
+                  style={{ minHeight: 72 }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Tone</span>
+                <select
+                  className="asset-filter-select"
+                  value={newProjectTone}
+                  onChange={(e) => setNewProjectTone(e.target.value)}
+                >
+                  <option value="blue">Blue</option>
+                  <option value="rose">Rose</option>
+                  <option value="amber">Amber</option>
+                  <option value="teal">Teal</option>
+                  <option value="violet">Violet</option>
+                  <option value="green">Green</option>
+                </select>
+              </label>
+
+              {projectError && (
+                <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>
+                  {projectError}
+                </div>
+              )}
+            </div>
+
+            <div className="move-copy-modal__foot">
+              <button
+                className="btn btn--ghost"
+                onClick={() => setProjectModalOpen(false)}
+                disabled={projectCreating}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="btn btn--primary"
+                onClick={handleCreateProject}
+                disabled={projectCreating || !newProjectName.trim() || !newProjectClient.trim()}
+              >
+                {projectCreating ? 'Creating…' : 'Create Project'}
               </button>
             </div>
           </div>
