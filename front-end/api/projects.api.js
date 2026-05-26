@@ -106,6 +106,16 @@ async function createFolder(projectId, { name, parentId } = {}) {
   return { data: data.folder, fromCache: false };
 }
 
+async function createProject({ name, client, description, tone } = {}) {
+  const { data } = await apiClient.post('/api/projects', {
+    name,
+    client,
+    description,
+    tone,
+  });
+  return { data: data.project, fromCache: false };
+}
+
 async function renameFolder(folderId, { name }) {
   const { data } = await apiClient.patch(`/api/folders/${folderId}`, { name });
   return { data: data.folder, fromCache: false };
@@ -118,6 +128,6 @@ async function deleteFolder(folderId, { force = false } = {}) {
 
 const projectsApi = {
   listProjects, getProject, getProjectFolders, getProjectAssets,
-  createFolder, renameFolder, deleteFolder,
+  createProject, createFolder, renameFolder, deleteFolder,
 };
 window.projectsApi = projectsApi;

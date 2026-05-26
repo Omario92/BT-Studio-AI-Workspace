@@ -4426,6 +4426,18 @@ function ProjectMgmt({ searchQuery = "" }) {
   // Object URL cache to prevent memory leaks
   const objectUrlsRef = React.useRef([]);
 
+  // Create menu and new project states
+  const [createMenuOpen, setCreateMenuOpen] = React.useState(false);
+  const createMenuRef = React.useRef(null);
+
+  const [projectModalOpen, setProjectModalOpen] = React.useState(false);
+  const [newProjectName, setNewProjectName] = React.useState('');
+  const [newProjectClient, setNewProjectClient] = React.useState('');
+  const [newProjectDescription, setNewProjectDescription] = React.useState('');
+  const [newProjectTone, setNewProjectTone] = React.useState('blue');
+  const [projectCreating, setProjectCreating] = React.useState(false);
+  const [projectError, setProjectError] = React.useState(null);
+
   // New folder modal
   const [folderModalOpen, setFolderModalOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState('');
@@ -4454,11 +4466,37 @@ function ProjectMgmt({ searchQuery = "" }) {
     };
   }, []);
 
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (createMenuRef.current && !createMenuRef.current.contains(e.target)) {
+        setCreateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
   const handleUploadClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
   };
 
+  const handleOpenCreateMenu = (e) => {
+    e.stopPropagation();
+    setCreateMenuOpen(v => !v);
+  };
+
+  const handleOpenProjectModal = () => {
+    setCreateMenuOpen(false);
+    setNewProjectName('');
+    setNewProjectClient('');
+    setNewProjectDescription('');
+    setNewProjectTone('blue');
+    setProjectError(null);
+    setProjectModalOpen(true);
+  };
+
   const handleOpenFolderModal = () => {
+    setCreateMenuOpen(false);
     if (!currentProject) return;
     console.log("[ProjectFiles] New folder clicked");
     setNewFolderName('');
@@ -4744,24 +4782,118 @@ function ProjectMgmt({ searchQuery = "" }) {
     }
   };
 
+  function resolveAssetSourceRefs(asset, detailedAsset) {
+    const d = detailedAsset || {};
+    const latestVersion = d.latestVersion || d.versions?.[0] || asset.latestVersion || asset.versions?.[0] || null;
+
+    const fileKey =
+      d.metadata?.fileKey ||
+      latestVersion?.params?.fileKey ||
+      latestVersion?.metadata?.fileKey ||
+      asset.metadata?.fileKey ||
+      asset.fileKey ||
+      null;
+
+    const fileUrl =
+      latestVersion?.fileUrl ||
+      d.fileUrl ||
+      asset.fileUrl ||
+      asset.previewUrl ||
+      asset.thumbnailUrl ||
+      asset.metadata?.thumbnailSignedUrl ||
+      asset.metadata?.thumbnailUrl ||
+      null;
+
+    return { fileKey, fileUrl, latestVersion };
+  }
+
   const handleUseWithAI = async (toolId, jobType) => {
     if (selectedAssetIds.size === 0) return;
     setBulkActionBusy(true);
     setBulkActionError(null);
     try {
       const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
-      localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify({
-        projectId: currentProject.id,
-        assets: selectedAssets.map(a => ({
+
+      // V0.6: For Upscaler, require an image as the source.
+      if (toolId === "upscaler") {
+        const firstAsset = selectedAssets[0];
+        if (!firstAsset || !(firstAsset.mimeType || "").startsWith("image/")) {
+          alert("Image Upscaler only accepts image assets. Please select an image.");
+          setBulkActionBusy(false);
+          setAiActionMenuOpen(false);
+          return;
+        }
+      }
+
+      // Pre-resolve signed preview URL for assets that have a fileKey so the
+      // workbench can render the source image instantly.
+      const enriched = await Promise.all(selectedAssets.map(async (a) => {
+        let assetDetail = {};
+        let versions = [];
+        try {
+          if (typeof assetsApi !== "undefined" && assetsApi.getAsset) {
+            assetDetail = await assetsApi.getAsset(a.id);
+          }
+        } catch (e) {
+          console.warn("[UseWithAI] Failed to fetch asset detail for", a.id, e);
+        }
+        try {
+          if (typeof assetsApi !== "undefined" && assetsApi.getAssetVersions) {
+            versions = await assetsApi.getAssetVersions(a.id);
+          }
+        } catch (e) {
+          console.warn("[UseWithAI] Failed to fetch versions for", a.id, e);
+        }
+
+        const detailed = {
+          ...assetDetail,
+          versions,
+          latestVersion: versions?.[0] || assetDetail?.versions?.[0] || null
+        };
+
+        const { fileKey, fileUrl, latestVersion } = resolveAssetSourceRefs(a, detailed);
+
+        let signedUrl = null;
+        if (fileKey && typeof assetsApi !== "undefined" && assetsApi.getSignedUrl) {
+          try {
+            signedUrl = await assetsApi.getSignedUrl(fileKey);
+          } catch (e) {
+            console.warn("[UseWithAI] Failed to get signed URL for", fileKey, e);
+          }
+        }
+
+        const previewUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const sourceFileUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const finalFileUrl = resolveFileUrl(fileUrl) || null;
+        const currentVersion = latestVersion?.versionNumber || latestVersion?.version || detailed?.currentVersion || a.currentVersion || 1;
+
+        console.log("[UseWithAI] enriched asset", { id: a.id, name: a.name, fileKey, hasPreviewUrl: !!previewUrl });
+
+        return {
           id: a.id,
           name: a.name,
-          fileKey: a.metadata?.fileKey || null,
-          fileUrl: a.fileUrl || null,
           mimeType: a.mimeType,
-        })),
-        toolId,
-        jobType,
+          fileKey,
+          fileUrl: finalFileUrl,
+          previewUrl,
+          sourceFileUrl,
+          projectId: a.projectId || currentProject.id,
+          currentVersion
+        };
       }));
+
+      const ctx = {
+        version: "0.6",
+        source: "projects",
+        projectId: currentProject.id,
+        toolId,
+        jobType: jobType === "upscale" ? "IMAGE_UPSCALE" : jobType,
+        mode: "single",
+        selectedAssetIds: enriched.map(a => a.id),
+        assets: enriched,
+      };
+
+      localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify(ctx));
       localStorage.setItem("bt_tool", toolId || "image-gen");
       localStorage.setItem("bt_screen", "workspace");
       window.location.reload();
@@ -4832,6 +4964,54 @@ function ProjectMgmt({ searchQuery = "" }) {
       setBulkActionBusy(false);
     }
   }
+
+  const handleCreateProject = async () => {
+    const name = newProjectName.trim();
+    const client = newProjectClient.trim();
+
+    if (!name) {
+      setProjectError('Project name is required');
+      return;
+    }
+
+    if (!client) {
+      setProjectError('Client / Brand is required');
+      return;
+    }
+
+    setProjectCreating(true);
+    setProjectError(null);
+
+    try {
+      const { data: project } = await projectsApi.createProject({
+        name,
+        client,
+        description: newProjectDescription.trim() || undefined,
+        tone: newProjectTone || undefined,
+      });
+
+      setProjects(prev => [project, ...prev]);
+      setCurrentProject(project);
+      localStorage.setItem('bt_active_proj', project.id);
+
+      const { data: freshFolders } = await projectsApi.getProjectFolders(project.id);
+      setFolders(freshFolders || []);
+
+      const genFolder = (freshFolders || []).find(f => f.name === 'Generated' || f.name === 'gen');
+      const defaultFolder = genFolder || (freshFolders || [])[0] || null;
+      setActiveFolderId(defaultFolder ? defaultFolder.id : null);
+
+      setProjectModalOpen(false);
+      setNewProjectName('');
+      setNewProjectClient('');
+      setNewProjectDescription('');
+      setNewProjectTone('blue');
+    } catch (err) {
+      setProjectError(err?.message || 'Failed to create project');
+    } finally {
+      setProjectCreating(false);
+    }
+  };
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
@@ -5160,15 +5340,48 @@ function ProjectMgmt({ searchQuery = "" }) {
       <aside className="pm__tree">
         <div className="tree__header">
           <h3>Project Files</h3>
-          <button
-            className="icon-btn"
-            type="button"
-            onClick={handleOpenFolderModal}
-            title="New Folder"
-            aria-label="New Folder"
-          >
-            {I.plus}
-          </button>
+          <div className="tree-create-menu" ref={createMenuRef}>
+            <button
+              className={`icon-btn ${createMenuOpen ? 'active' : ''}`}
+              type="button"
+              onClick={handleOpenCreateMenu}
+              title="Create"
+              aria-label="Create project or folder"
+              aria-expanded={createMenuOpen}
+            >
+              {I.plus}
+            </button>
+
+            {createMenuOpen && (
+              <div className="tree-create-menu__popover">
+                <button
+                  type="button"
+                  className="tree-create-menu__item"
+                  onClick={handleOpenProjectModal}
+                >
+                  <span className="tree-create-menu__icon">{I.folder}</span>
+                  <span>
+                    <strong>New Project</strong>
+                    <small>Create a new workspace project</small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="tree-create-menu__item"
+                  onClick={handleOpenFolderModal}
+                  disabled={!currentProject}
+                  title={!currentProject ? 'Select a project first' : 'Create folder in current project'}
+                >
+                  <span className="tree-create-menu__icon">{I.folder}</span>
+                  <span>
+                    <strong>New Folder</strong>
+                    <small>Add folder to current project</small>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn icon-btn--light"
             title="Hide file tree"
@@ -5548,6 +5761,117 @@ function ProjectMgmt({ searchQuery = "" }) {
               </button>
               <button className="btn btn--primary" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
                 {folderCreating ? 'Creating…' : 'Create Folder'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New Project Modal ── */}
+      {projectModalOpen && (
+        <div
+          className="move-copy-modal"
+          onClick={() => {
+            if (!projectCreating) setProjectModalOpen(false);
+          }}
+        >
+          <div
+            className="move-copy-modal__card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 420 }}
+          >
+            <div className="move-copy-modal__head">
+              <h3>New Project</h3>
+              <button
+                className="icon-btn icon-btn--light"
+                onClick={() => setProjectModalOpen(false)}
+                disabled={projectCreating}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="move-copy-modal__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Project Name</span>
+                <input
+                  autoFocus
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Huda Summer Campaign"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateProject();
+                    if (e.key === 'Escape') setProjectModalOpen(false);
+                  }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Client / Brand</span>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Huda / Carlsberg"
+                  value={newProjectClient}
+                  onChange={(e) => setNewProjectClient(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateProject();
+                    if (e.key === 'Escape') setProjectModalOpen(false);
+                  }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Description</span>
+                <textarea
+                  className="textarea"
+                  placeholder="Optional project description..."
+                  value={newProjectDescription}
+                  onChange={(e) => setNewProjectDescription(e.target.value)}
+                  style={{ minHeight: 72 }}
+                />
+              </label>
+
+              <label className="asset-filter-field">
+                <span className="asset-filter-label">Tone</span>
+                <select
+                  className="asset-filter-select"
+                  value={newProjectTone}
+                  onChange={(e) => setNewProjectTone(e.target.value)}
+                >
+                  <option value="blue">Blue</option>
+                  <option value="rose">Rose</option>
+                  <option value="amber">Amber</option>
+                  <option value="teal">Teal</option>
+                  <option value="violet">Violet</option>
+                  <option value="green">Green</option>
+                </select>
+              </label>
+
+              {projectError && (
+                <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>
+                  {projectError}
+                </div>
+              )}
+            </div>
+
+            <div className="move-copy-modal__foot">
+              <button
+                className="btn btn--ghost"
+                onClick={() => setProjectModalOpen(false)}
+                disabled={projectCreating}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="btn btn--primary"
+                onClick={handleCreateProject}
+                disabled={projectCreating || !newProjectName.trim() || !newProjectClient.trim()}
+              >
+                {projectCreating ? 'Creating…' : 'Create Project'}
               </button>
             </div>
           </div>
@@ -6349,9 +6673,321 @@ function WorkbenchHead({ tool, onBack, extra }) {
       {extra}
       <button className="btn btn--secondary">{I.history}<span>History</span></button>
       <button className="btn btn--secondary">{I.save}<span>Save preset</span></button>
+function getAssetPreviewCandidate(asset) {
+  return (
+    asset?.previewUrl ||
+    asset?.sourceFileUrl ||
+    asset?.fileUrl ||
+    asset?.thumbnailUrl ||
+    asset?.metadata?.thumbnailSignedUrl ||
+    asset?.metadata?.thumbnailUrl ||
+    null
+  );
+}
+
+function resolveAssetSourceRefs(asset, detailedAsset, versions) {
+  const d = detailedAsset || {};
+  const latestVersion =
+    versions?.[0] ||
+    d.latestVersion ||
+    d.versions?.[0] ||
+    asset.latestVersion ||
+    asset.versions?.[0] ||
+    null;
+
+  const fileKey =
+    d.metadata?.fileKey ||
+    latestVersion?.params?.fileKey ||
+    latestVersion?.metadata?.fileKey ||
+    asset.metadata?.fileKey ||
+    asset.fileKey ||
+    null;
+
+  const fileUrl =
+    latestVersion?.fileUrl ||
+    d.fileUrl ||
+    asset.fileUrl ||
+    asset.previewUrl ||
+    asset.thumbnailUrl ||
+    asset.metadata?.thumbnailSignedUrl ||
+    asset.metadata?.thumbnailUrl ||
+    null;
+
+  return { fileKey, fileUrl, latestVersion };
+}
+
+async function hydrateWorkspaceSourceAsset(asset, projectId) {
+  if (!asset?.id) return null;
+
+  let detailed = null;
+  let versions = [];
+
+  try {
+    if (window.assetsApi?.getAsset) {
+      detailed = await window.assetsApi.getAsset(asset.id);
+    }
+  } catch (err) {
+    console.warn("[SourcePicker] getAsset failed:", err);
+  }
+
+  try {
+    if (window.assetsApi?.getAssetVersions) {
+      versions = await window.assetsApi.getAssetVersions(asset.id);
+    }
+  } catch (err) {
+    console.warn("[SourcePicker] getAssetVersions failed:", err);
+  }
+
+  const { fileKey, fileUrl, latestVersion } = resolveAssetSourceRefs(asset, detailed, versions);
+
+  let signedUrl = null;
+  if (fileKey && window.assetsApi?.getSignedUrl) {
+    try {
+      signedUrl = await window.assetsApi.getSignedUrl(fileKey);
+    } catch (err) {
+      console.warn("[SourcePicker] getSignedUrl failed:", err);
+    }
+  }
+
+  const previewUrl = signedUrl || (fileUrl ? resolveFileUrl(fileUrl) : null) || (getAssetPreviewCandidate(asset) ? resolveFileUrl(getAssetPreviewCandidate(asset)) : null);
+  const sourceFileUrl = signedUrl || (fileUrl ? resolveFileUrl(fileUrl) : null) || (getAssetPreviewCandidate(asset) ? resolveFileUrl(getAssetPreviewCandidate(asset)) : null);
+  const finalFileUrl = fileUrl ? resolveFileUrl(fileUrl) : null;
+
+  return {
+    id: asset.id,
+    name: detailed?.name || asset.name || "Untitled asset",
+    mimeType: detailed?.mimeType || asset.mimeType || "image/png",
+    fileKey,
+    fileUrl: finalFileUrl,
+    previewUrl,
+    sourceFileUrl,
+    projectId: detailed?.projectId || asset.projectId || projectId || null,
+    currentVersion:
+      detailed?.currentVersion ||
+      latestVersion?.versionNumber ||
+      asset.currentVersion ||
+      1,
+  };
+}
+
+function saveWorkspaceSourceContext(sourceAsset, {
+  toolId = "upscaler",
+  jobType = "IMAGE_UPSCALE",
+  mode = "single",
+} = {}) {
+  if (!sourceAsset) return;
+
+  const ctx = {
+    version: "0.6",
+    source: "workspace-picker",
+    projectId: sourceAsset.projectId,
+    toolId,
+    jobType,
+    mode,
+    selectedAssetIds: [sourceAsset.id],
+    assets: [sourceAsset],
+  };
+
+  localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify(ctx));
+}
+
+function ProjectAssetPickerModal({
+  open,
+  onClose,
+  onSelect,
+  title = "Pick Source from Projects",
+  accept = "image",
+}) {
+  const [projects, setProjects] = React.useState([]);
+  const [activeProjectId, setActiveProjectId] = React.useState(null);
+  const [assets, setAssets] = React.useState([]);
+  const [loadingProjects, setLoadingProjects] = React.useState(false);
+  const [loadingAssets, setLoadingAssets] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [error, setError] = React.useState(null);
+  const [selectingId, setSelectingId] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    setLoadingProjects(true);
+    setError(null);
+
+    window.projectsApi.listProjects()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = data || [];
+        setProjects(list);
+
+        const stored = localStorage.getItem("bt_active_proj");
+        const found = list.find(p => p.id === stored);
+        const first = found || list[0] || null;
+        setActiveProjectId(first?.id || null);
+      })
+      .catch(err => {
+        if (!cancelled) setError(err?.message || "Failed to load projects");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProjects(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open || !activeProjectId) return;
+
+    let cancelled = false;
+    setLoadingAssets(true);
+    setError(null);
+
+    window.projectsApi.getProjectAssets(activeProjectId, {
+      search: search.trim() || undefined,
+      type: accept === "image" ? "image" : undefined,
+      limit: 100,
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = (data || []).filter(asset => {
+          if (accept === "image") {
+            return (asset.mimeType || "").startsWith("image/");
+          }
+          return true;
+        });
+        setAssets(list);
+      })
+      .catch(err => {
+        if (!cancelled) setError(err?.message || "Failed to load assets");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAssets(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [open, activeProjectId, search, accept]);
+
+  if (!open) return null;
+
+  const handleSelect = async (asset) => {
+    setSelectingId(asset.id);
+    setError(null);
+
+    try {
+      const source = await hydrateWorkspaceSourceAsset(asset, activeProjectId);
+
+      if (!source) throw new Error("Could not resolve selected source asset");
+      if (accept === "image" && !(source.mimeType || "").startsWith("image/")) {
+        throw new Error("Only image assets are supported as source in V0.6");
+      }
+
+      onSelect(source);
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Failed to select source asset");
+    } finally {
+      setSelectingId(null);
+    }
+  };
+
+  return (
+    <div className="source-picker" onClick={onClose}>
+      <div className="source-picker__card" onClick={(e) => e.stopPropagation()}>
+        <div className="source-picker__head">
+          <div>
+            <h3>{title}</h3>
+            <p>Select an image asset from an existing project.</p>
+          </div>
+          <button className="icon-btn icon-btn--light" onClick={onClose}>×</button>
+        </div>
+
+        <div className="source-picker__toolbar">
+          <select
+            className="asset-filter-select"
+            value={activeProjectId || ""}
+            onChange={(e) => setActiveProjectId(e.target.value)}
+            disabled={loadingProjects}
+          >
+            {projects.map(project => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+
+          <input
+            className="input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search image assets..."
+          />
+        </div>
+
+        {error && (
+          <div className="source-picker__error">
+            {error}
+          </div>
+        )}
+
+        <div className="source-picker__body">
+          {loadingAssets ? (
+            <div className="source-picker__empty">Loading assets…</div>
+          ) : assets.length === 0 ? (
+            <div className="source-picker__empty">No image assets found in this project.</div>
+          ) : (
+            <div className="source-picker__grid">
+              {assets.map(asset => {
+                const thumb =
+                  asset.localThumbnailUrl ||
+                  asset.thumbnailUrl ||
+                  asset.metadata?.thumbnailSignedUrl ||
+                  asset.metadata?.thumbnailUrl ||
+                  asset.fileUrl ||
+                  "";
+
+                return (
+                  <button
+                    key={asset.id}
+                    className="source-picker__asset"
+                    onClick={() => handleSelect(asset)}
+                    disabled={selectingId === asset.id}
+                  >
+                    <div className="source-picker__thumb">
+                      {thumb ? (
+                        <img
+                          src={resolveFileUrl(thumb)}
+                          alt={asset.name}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
+                      )}
+                    </div>
+
+                    <div className="source-picker__meta">
+                      <strong title={asset.name}>{asset.name}</strong>
+                      <small>
+                        {asset.mimeType || "image"} · v{asset.currentVersion || 1}
+                      </small>
+                    </div>
+
+                    {selectingId === asset.id && (
+                      <span className="source-picker__selecting">Selecting…</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+window.ProjectAssetPickerModal = ProjectAssetPickerModal;
 
 // ─────────────────────────────────────────────────────────────
 // UPSCALER WORKBENCH
@@ -6372,6 +7008,138 @@ function UpscalerWorkbench({ tool, onBack }) {
       return first ? { ...first, projectId: parsed.projectId } : null;
     } catch (_e) { return null; }
   });
+
+  const [sourcePreviewError, setSourcePreviewError] = React.useState(false);
+  const [hasRehydrated, setHasRehydrated] = React.useState(false);
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+
+  const handlePickSource = (source) => {
+    setSourceAsset(source);
+    setSourcePreviewError(false);
+    setResultUrl(null);
+    setJobError(null);
+    setJobStatus("idle");
+    setJobId(null);
+    saveWorkspaceSourceContext(source, {
+      toolId: "upscaler",
+      jobType: "IMAGE_UPSCALE",
+      mode: "single",
+    });
+    if (source.projectId) {
+      localStorage.setItem("bt_active_proj", source.projectId);
+    }
+  };
+
+  const getSourcePreviewUrl = (asset) => {
+    const url = asset?.previewUrl || asset?.sourceFileUrl || asset?.fileUrl || asset?.thumbnailUrl || null;
+    console.log("[Upscaler] source preview url", url);
+    return url;
+  };
+
+  React.useEffect(() => {
+    let active = true;
+    const loadFullSourceAsset = async () => {
+      if (!sourceAsset?.id) return;
+      
+      const missingUrls = !sourceAsset.previewUrl && !sourceAsset.sourceFileUrl && !sourceAsset.fileUrl;
+      const needsRehydrate = missingUrls || (sourcePreviewError && !hasRehydrated);
+
+      if (!needsRehydrate) return;
+
+      try {
+        console.log("[Upscaler] Lazy hydrating source asset:", sourceAsset.id);
+        let assetDetail = {};
+        let versions = [];
+
+        if (typeof window.assetsApi !== "undefined" && window.assetsApi.getAsset) {
+          assetDetail = await window.assetsApi.getAsset(sourceAsset.id);
+        }
+        if (typeof window.assetsApi !== "undefined" && window.assetsApi.getAssetVersions) {
+          versions = await window.assetsApi.getAssetVersions(sourceAsset.id);
+        }
+
+        if (!active) return;
+
+        const detailed = {
+          ...assetDetail,
+          versions,
+          latestVersion: versions?.[0] || assetDetail?.versions?.[0] || null
+        };
+
+        const latestVersion = detailed.latestVersion;
+        const fileKey =
+          detailed.metadata?.fileKey ||
+          latestVersion?.params?.fileKey ||
+          latestVersion?.metadata?.fileKey ||
+          sourceAsset.metadata?.fileKey ||
+          sourceAsset.fileKey ||
+          null;
+
+        const fileUrl =
+          latestVersion?.fileUrl ||
+          detailed.fileUrl ||
+          sourceAsset.fileUrl ||
+          sourceAsset.previewUrl ||
+          sourceAsset.thumbnailUrl ||
+          sourceAsset.metadata?.thumbnailSignedUrl ||
+          sourceAsset.metadata?.thumbnailUrl ||
+          null;
+
+        let signedUrl = null;
+        if (fileKey && typeof window.assetsApi !== "undefined" && window.assetsApi.getSignedUrl) {
+          try {
+            signedUrl = await window.assetsApi.getSignedUrl(fileKey);
+          } catch (e) {
+            console.warn("[Upscaler] Failed to get signed URL during hydration:", e);
+          }
+        }
+
+        const previewUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const sourceFileUrl = signedUrl || resolveFileUrl(fileUrl) || null;
+        const finalFileUrl = resolveFileUrl(fileUrl) || null;
+        const currentVersion = latestVersion?.versionNumber || latestVersion?.version || detailed?.currentVersion || sourceAsset.currentVersion || 1;
+
+        const updatedAsset = {
+          ...sourceAsset,
+          fileKey,
+          fileUrl: finalFileUrl,
+          previewUrl,
+          sourceFileUrl,
+          currentVersion
+        };
+
+        if (active) {
+          setSourceAsset(updatedAsset);
+          if (sourcePreviewError) {
+            setSourcePreviewError(false);
+            setHasRehydrated(true);
+          }
+
+          // update localStorage
+          try {
+            const raw = localStorage.getItem("bt_selected_assets_for_ai");
+            if (raw) {
+              const ctx = JSON.parse(raw);
+              if (ctx?.assets?.[0]?.id === sourceAsset.id) {
+                ctx.assets[0] = updatedAsset;
+                localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify(ctx));
+              }
+            }
+          } catch (e) {
+            console.warn("[Upscaler] Failed to update localStorage context:", e);
+          }
+        }
+      } catch (err) {
+        console.warn("[Upscaler] Hydration failed:", err);
+      }
+    };
+
+    loadFullSourceAsset();
+
+    return () => {
+      active = false;
+    };
+  }, [sourceAsset?.id, sourcePreviewError, hasRehydrated]);
 
   const clearSource = () => {
     localStorage.removeItem("bt_selected_assets_for_ai");
@@ -6435,7 +7203,17 @@ function UpscalerWorkbench({ tool, onBack }) {
         toolId: "upscaler",          // backend resolves slug → id
         jobType: "IMAGE_UPSCALE",
         mode: "single",
-        params: { scale, faceEnhance: !!face },
+        params: {
+          assetId: sourceAsset.id,
+          sourceFileUrl: sourceAsset.sourceFileUrl || sourceAsset.previewUrl || sourceAsset.fileUrl,
+          sourceFileKey: sourceAsset.fileKey || null,
+          scale,
+          faceEnhance: !!face,
+          detail,
+          denoise,
+          outputPolicy: "NEW_VERSION_OF_SOURCE_ASSET",
+          providerPreference: ["dispatcher", "comfyui", "mock"],
+        },
       });
       const newJobId = res?.job?.id;
       if (!newJobId) throw new Error("No job id returned from /use-with-ai");
@@ -6466,11 +7244,10 @@ function UpscalerWorkbench({ tool, onBack }) {
                 display: "flex", alignItems: "center", gap: 10
               }}>
                 <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: 'var(--bg-canvas-2)'}}>
-                  {sourceAsset?.fileUrl ? (
-                    <img src={sourceAsset.fileUrl} alt={sourceAsset.name}
-                         style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                  {(getSourcePreviewUrl(sourceAsset) && !sourcePreviewError) ? (
+                    <img src={getSourcePreviewUrl(sourceAsset)} alt={sourceAsset.name || "Source Asset"} style={{width: '100%', height: '100%', objectFit: 'cover'}} onError={() => setSourcePreviewError(true)} />
                   ) : (
-                    <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
+                    <Placeholder tone="violet" label={sourceAsset ? "NO PREVIEW" : ""} style={{height:"100%", borderRadius: 0}} />
                   )}
                 </div>
                 <div style={{flex: 1, minWidth: 0}}>
@@ -6487,6 +7264,21 @@ function UpscalerWorkbench({ tool, onBack }) {
                   <button className="icon-btn" onClick={clearSource} title="Clear source">{I.x}</button>
                 )}
               </div>
+              <button
+                className="btn btn--secondary"
+                type="button"
+                onClick={() => setSourcePickerOpen(true)}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "var(--bg-input-dark)",
+                  color: "var(--ink-on-dark)",
+                  borderColor: "var(--line-on-dark-2)"
+                }}
+              >
+                {I.folder}<span>{sourceAsset ? "Change Source" : "Pick Source from Projects"}</span>
+              </button>
             </div>
 
             <div className="field">
@@ -6609,12 +7401,12 @@ function UpscalerWorkbench({ tool, onBack }) {
           <div className="up-canvas__stage">
             <div className="compare">
               <div className="before">
-                {sourceAsset?.fileUrl ? (
-                  <img src={sourceAsset.fileUrl} alt="before" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+                {(getSourcePreviewUrl(sourceAsset) && !sourcePreviewError) ? (
+                  <img src={getSourcePreviewUrl(sourceAsset)} alt={sourceAsset.name || "before"} style={{width:'100%', height:'100%', objectFit:'contain'}} onError={() => setSourcePreviewError(true)} />
                 ) : (
-                  <Placeholder tone="violet" label="" />
+                  <Placeholder tone="violet" label={sourceAsset ? "NO PREVIEW" : ""} />
                 )}
-                <span className="compare__tag" style={{left: 12}}>BEFORE</span>
+                <span className="compare__tag" style={{left: 12}}>BEFORE · {sourceAsset?.name || "no source"}</span>
               </div>
               <div className="after">
                 {resultUrl ? (
@@ -6655,6 +7447,14 @@ function UpscalerWorkbench({ tool, onBack }) {
           </div>
         </section>
       </div>
+
+      <ProjectAssetPickerModal
+        open={sourcePickerOpen}
+        onClose={() => setSourcePickerOpen(false)}
+        onSelect={handlePickSource}
+        title="Pick Source for Upscaler"
+        accept="image"
+      />
     </>
   );
 }
@@ -6676,6 +7476,25 @@ function EditorWorkbench({ tool, onBack }) {
       return null;
     }
   });
+
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+
+  const handlePickEditSource = (source) => {
+    const editSource = {
+      ...source,
+      previewUrl: source.previewUrl || source.sourceFileUrl || source.fileUrl,
+      assetName: source.name,
+    };
+
+    setEditAsset(editSource);
+
+    localStorage.setItem("bt_edit_asset", JSON.stringify(editSource));
+    saveWorkspaceSourceContext(source, {
+      toolId: "editor",
+      jobType: "IMAGE_EDIT",
+      mode: "single",
+    });
+  };
 
   const tools = [
     { id: "select",  ico: I.panelLeft },
@@ -6722,6 +7541,21 @@ function EditorWorkbench({ tool, onBack }) {
                   setEditAsset(null);
                 }}>{I.x}</button>
               </div>
+              <button
+                className="btn btn--secondary"
+                type="button"
+                onClick={() => setSourcePickerOpen(true)}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "var(--bg-input-dark)",
+                  color: "var(--ink-on-dark)",
+                  borderColor: "var(--line-on-dark-2)"
+                }}
+              >
+                {I.folder}<span>{editAsset ? "Change Source" : "Pick Source from Projects"}</span>
+              </button>
             </div>
 
             <div className="field">
@@ -6856,6 +7690,14 @@ function EditorWorkbench({ tool, onBack }) {
           </div>
         </aside>
       </div>
+
+      <ProjectAssetPickerModal
+        open={sourcePickerOpen}
+        onClose={() => setSourcePickerOpen(false)}
+        onSelect={handlePickEditSource}
+        title="Pick Source for Editor"
+        accept="image"
+      />
     </>
   );
 }
@@ -7414,6 +8256,22 @@ function ImageGenWorkbench({ tool, onBack }) {
   const [currentJob, setCurrentJob] = React.useState(null);
   const [progress, setProgress] = React.useState(0);
   const [generatedAsset, setGeneratedAsset] = React.useState(null);
+
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+  const [referenceAsset, setReferenceAsset] = React.useState(null);
+
+  const handlePickReferenceAsset = (source) => {
+    setReferenceAsset(source);
+    if (typeof saveWorkspaceSourceContext === "function") {
+      saveWorkspaceSourceContext(source, {
+        toolId: "image-gen",
+        jobType: "IMAGE_GENERATION",
+        mode: "single"
+      });
+    }
+  };
+
+  const ProjectAssetPickerModal = window.ProjectAssetPickerModal;
   
   const pollTimerRef = React.useRef(null);
 
@@ -7473,7 +8331,14 @@ function ImageGenWorkbench({ tool, onBack }) {
       type: "IMAGE_GENERATION",
       projectId: activeProjId,
       toolId: tool._dbId,
-      params: { prompt: promptText }
+      params: {
+        prompt: promptText,
+        ...(referenceAsset ? {
+          sourceAssetId: referenceAsset.id,
+          sourceFileUrl: referenceAsset.sourceFileUrl || referenceAsset.previewUrl || referenceAsset.fileUrl,
+          sourceFileKey: referenceAsset.fileKey || null
+        } : {})
+      }
     }).then(job => {
       setCurrentJob(job);
       startPolling(job.id);
@@ -7511,6 +8376,41 @@ function ImageGenWorkbench({ tool, onBack }) {
                 <div className="aiw__upload__formats">JPG · PNG · WEBP · SVG · ≤ 30MB</div>
                 <button className="btn btn--secondary" style={{marginTop:6, background:"var(--bg-nav-2)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}>Browse files</button>
               </div>
+              <button
+                className="btn btn--secondary"
+                type="button"
+                onClick={() => setSourcePickerOpen(true)}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "var(--bg-input-dark)",
+                  color: "var(--ink-on-dark)",
+                  borderColor: "var(--line-on-dark-2)"
+                }}
+              >
+                {I.folder}<span>{referenceAsset ? "Change Reference Image" : "Pick Source from Projects"}</span>
+              </button>
+
+              {referenceAsset && (
+                <div style={{
+                  marginTop: 8,
+                  border: "1px solid var(--line-on-dark-2)",
+                  background: "var(--bg-input-dark)",
+                  borderRadius: 10, padding: 8,
+                  display: "flex", alignItems: "center", gap: 10
+                }}>
+                  <div style={{width: 40, height: 40, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas-2)"}}>
+                    <img src={referenceAsset.previewUrl || referenceAsset.sourceFileUrl || referenceAsset.fileUrl} alt={referenceAsset.name} style={{width: "100%", height: "100%", objectFit: "cover"}} />
+                  </div>
+                  <div style={{flex: 1, minWidth: 0}}>
+                    <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap"}} title={referenceAsset.name}>
+                      {referenceAsset.name}
+                    </div>
+                  </div>
+                  <button className="icon-btn" onClick={() => setReferenceAsset(null)} title="Clear reference">{I.x}</button>
+                </div>
+              )}
             </div>
 
             <div className="field">
@@ -7701,6 +8601,16 @@ function ImageGenWorkbench({ tool, onBack }) {
           </div>
         </section>
       </div>
+
+      {ProjectAssetPickerModal && (
+        <ProjectAssetPickerModal
+          open={sourcePickerOpen}
+          onClose={() => setSourcePickerOpen(false)}
+          onSelect={handlePickReferenceAsset}
+          title="Pick Reference Image for Gen"
+          accept="image"
+        />
+      )}
     </>
   );
 }

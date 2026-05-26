@@ -12,6 +12,22 @@ function ImageGenWorkbench({ tool, onBack }) {
   const [currentJob, setCurrentJob] = React.useState(null);
   const [progress, setProgress] = React.useState(0);
   const [generatedAsset, setGeneratedAsset] = React.useState(null);
+
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+  const [referenceAsset, setReferenceAsset] = React.useState(null);
+
+  const handlePickReferenceAsset = (source) => {
+    setReferenceAsset(source);
+    if (typeof saveWorkspaceSourceContext === "function") {
+      saveWorkspaceSourceContext(source, {
+        toolId: "image-gen",
+        jobType: "IMAGE_GENERATION",
+        mode: "single"
+      });
+    }
+  };
+
+  const ProjectAssetPickerModal = window.ProjectAssetPickerModal;
   
   const pollTimerRef = React.useRef(null);
 
@@ -71,7 +87,14 @@ function ImageGenWorkbench({ tool, onBack }) {
       type: "IMAGE_GENERATION",
       projectId: activeProjId,
       toolId: tool._dbId,
-      params: { prompt: promptText }
+      params: {
+        prompt: promptText,
+        ...(referenceAsset ? {
+          sourceAssetId: referenceAsset.id,
+          sourceFileUrl: referenceAsset.sourceFileUrl || referenceAsset.previewUrl || referenceAsset.fileUrl,
+          sourceFileKey: referenceAsset.fileKey || null
+        } : {})
+      }
     }).then(job => {
       setCurrentJob(job);
       startPolling(job.id);
@@ -109,6 +132,41 @@ function ImageGenWorkbench({ tool, onBack }) {
                 <div className="aiw__upload__formats">JPG · PNG · WEBP · SVG · ≤ 30MB</div>
                 <button className="btn btn--secondary" style={{marginTop:6, background:"var(--bg-nav-2)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}>Browse files</button>
               </div>
+              <button
+                className="btn btn--secondary"
+                type="button"
+                onClick={() => setSourcePickerOpen(true)}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "var(--bg-input-dark)",
+                  color: "var(--ink-on-dark)",
+                  borderColor: "var(--line-on-dark-2)"
+                }}
+              >
+                {I.folder}<span>{referenceAsset ? "Change Reference Image" : "Pick Source from Projects"}</span>
+              </button>
+
+              {referenceAsset && (
+                <div style={{
+                  marginTop: 8,
+                  border: "1px solid var(--line-on-dark-2)",
+                  background: "var(--bg-input-dark)",
+                  borderRadius: 10, padding: 8,
+                  display: "flex", alignItems: "center", gap: 10
+                }}>
+                  <div style={{width: 40, height: 40, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas-2)"}}>
+                    <img src={referenceAsset.previewUrl || referenceAsset.sourceFileUrl || referenceAsset.fileUrl} alt={referenceAsset.name} style={{width: "100%", height: "100%", objectFit: "cover"}} />
+                  </div>
+                  <div style={{flex: 1, minWidth: 0}}>
+                    <div style={{fontFamily:"var(--f-mono)", fontSize: 11, color:"#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap"}} title={referenceAsset.name}>
+                      {referenceAsset.name}
+                    </div>
+                  </div>
+                  <button className="icon-btn" onClick={() => setReferenceAsset(null)} title="Clear reference">{I.x}</button>
+                </div>
+              )}
             </div>
 
             <div className="field">
@@ -299,6 +357,16 @@ function ImageGenWorkbench({ tool, onBack }) {
           </div>
         </section>
       </div>
+
+      {ProjectAssetPickerModal && (
+        <ProjectAssetPickerModal
+          open={sourcePickerOpen}
+          onClose={() => setSourcePickerOpen(false)}
+          onSelect={handlePickReferenceAsset}
+          title="Pick Reference Image for Gen"
+          accept="image"
+        />
+      )}
     </>
   );
 }
