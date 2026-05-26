@@ -397,9 +397,22 @@ async function bulkDownload(assetIds) {
   return data.files;
 }
 
-async function useWithAI(assetIds, { projectId, toolId, jobType, mode }) {
-  const { data } = await apiClient.post('/api/assets/use-with-ai', { assetIds, projectId, toolId, jobType, mode });
+async function useWithAI(assetIds, { projectId, toolId, jobType, mode, params }) {
+  const { data } = await apiClient.post('/api/assets/use-with-ai', {
+    assetIds, projectId, toolId, jobType, mode,
+    ...(params ? { params } : {}),
+  });
   return data;
+}
+
+async function renameAsset(assetId, data) {
+  const res = await apiClient.patch(`/api/assets/${assetId}`, data);
+  return res.data?.asset || res.data;
+}
+
+async function bulkDuplicate(assetIds) {
+  const res = await apiClient.post("/api/assets/bulk-duplicate", { assetIds });
+  return res.data;
 }
 
 const assetsApi = {
@@ -407,6 +420,7 @@ const assetsApi = {
   addComment, sendToReview, approveVersion, rejectVersion, requestRevision,
   uploadAsset, getSignedUrl, deleteAsset,
   bulkDelete, bulkMove, bulkCopy, bulkDownload, useWithAI,
+  renameAsset, bulkDuplicate,
 };
 window.assetsApi = assetsApi;
 

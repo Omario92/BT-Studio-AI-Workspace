@@ -15,7 +15,8 @@
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "r2:orphan:dry-run": "tsx scratch/r2-orphan-cleanup.ts",
-    "r2:orphan:delete": "tsx scratch/r2-orphan-cleanup.ts --delete"
+    "r2:orphan:delete": "tsx scratch/r2-orphan-cleanup.ts --delete",
+    "seed:replicate": "tsx scratch/seed-replicate-tools.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1053.0",

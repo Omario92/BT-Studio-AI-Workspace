@@ -781,6 +781,9 @@ export async function useAssetsWithAI(
   });
   if (!member && !isAdmin) throw Errors.Forbidden('Access denied to project');
 
+  // Tool-specific params (scale, faceEnhance, prompt, etc.) flow through `input.params`
+  const extraParams = (input as any).params ?? {};
+
   // Resolve toolId — accept either an AITool.id or AITool.slug
   let resolvedToolId: string | undefined = input.toolId;
   if (input.toolId) {
@@ -789,7 +792,8 @@ export async function useAssetsWithAI(
       resolvedToolId = byId.id;
     } else {
       const bySlug = await prisma.aITool.findUnique({ where: { slug: input.toolId } });
-      if (bySlug) resolvedToolId = bySlug.id;
+      if (!bySlug) throw Errors.NotFound(`AI Tool not found: "${input.toolId}"`);
+      resolvedToolId = bySlug.id;
     }
   }
 
@@ -881,11 +885,14 @@ export async function useAssetsWithAI(
       projectId: input.projectId,
       toolId: resolvedToolId,
       params: {
-        ...(input.params ?? {}),
+        // assetId is read by processAIJob to decide between "new version of source asset"
+        // (when present) vs "create a brand-new asset" (when absent). Pass it so the
+        // upscale/edit/bg-remove output lands as v2 on the source.
         sourceAssetId: asset.id,
         assetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
+        ...extraParams,
       },
     }, userId);
     return { mode: 'single' as const, job };
@@ -893,16 +900,160 @@ export async function useAssetsWithAI(
     const batchInputs = assets.map(asset => ({
       name: `AI Action on ${asset.name}`,
       params: {
-        ...(input.params ?? {}),
         sourceAssetId: asset.id,
         assetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
+        ...extraParams,
       },
     }));
 
-    const batch = await createBatch(input.projectId, resolvedToolId ?? input.toolId, batchInputs, userId);
+    const batch = await createBatch(input.projectId, resolvedToolId!, batchInputs, userId);
     return { mode: 'batch' as const, batch };
   }
 }
+
+export async function renameAsset(assetId: string, userId: string, name: string) {
+  if (!name || name.trim() === '') throw Errors.BadRequest('Asset name is required');
+
+  const asset = await prisma.asset.findUnique({
+    where: { id: assetId }
+  });
+  if (!asset) throw Errors.NotFound('Asset not found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  const member = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: asset.projectId, userId } }
+  });
+  if (!member && !isAdmin) throw Errors.Forbidden('Access denied');
+
+  const updatedAsset = await prisma.asset.update({
+    where: { id: assetId },
+    data: { name: name.trim() }
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      action: 'renamed',
+      entityType: 'asset',
+      entityId: assetId,
+      detail: `Renamed to ${name.trim()}`,
+      userId,
+      projectId: asset.projectId,
+    }
+  });
+
+  return updatedAsset;
+}
+
+async function getUniqueDuplicateName(folderId: string | null, projectId: string, originalName: string): Promise<string> {
+  const baseName = `Copy of ${originalName}`;
+  const existingAssets = await prisma.asset.findMany({
+    where: {
+      projectId,
+      folderId,
+      name: {
+        startsWith: 'Copy'
+      }
+    },
+    select: { name: true }
+  });
+
+  const existingNames = new Set(existingAssets.map(a => a.name));
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+
+  let counter = 2;
+  while (true) {
+    const candidateName = `Copy ${counter} of ${originalName}`;
+    if (!existingNames.has(candidateName)) {
+      return candidateName;
+    }
+    counter++;
+  }
+}
+
+export async function bulkDuplicateAssets(assetIds: string[], userId: string) {
+  if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds } },
+    include: {
+      versions: {
+        orderBy: { versionNumber: 'desc' },
+        take: 1
+      }
+    }
+  });
+  if (assets.length === 0) throw Errors.NotFound('No assets found');
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isAdmin = user?.role === 'ADMIN';
+
+  const copiedAssets = [];
+
+  for (const asset of assets) {
+    const member = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: asset.projectId, userId } }
+    });
+    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for duplicate`);
+
+    const newName = await getUniqueDuplicateName(asset.folderId, asset.projectId, asset.name);
+
+    const originalMeta = typeof asset.metadata === 'object' && asset.metadata ? asset.metadata : {};
+    const newMeta = {
+      ...originalMeta,
+      duplicatedFromAssetId: asset.id
+    };
+
+    const newAsset = await prisma.asset.create({
+      data: {
+        name: newName,
+        fileUrl: asset.fileUrl,
+        mimeType: asset.mimeType,
+        fileSizeBytes: asset.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        currentVersion: 1,
+        projectId: asset.projectId,
+        folderId: asset.folderId,
+        creatorId: userId,
+        metadata: newMeta as any,
+      }
+    });
+
+    const sourceVersion = asset.versions[0];
+    await prisma.assetVersion.create({
+      data: {
+        assetId: newAsset.id,
+        versionNumber: 1,
+        fileUrl: sourceVersion?.fileUrl || asset.fileUrl,
+        mimeType: sourceVersion?.mimeType || asset.mimeType,
+        fileSizeBytes: sourceVersion?.fileSizeBytes || asset.fileSizeBytes,
+        status: AssetStatus.DRAFT,
+        createdById: userId,
+        params: sourceVersion?.params as any,
+      }
+    });
+
+    copiedAssets.push(newAsset);
+  }
+
+  const firstAsset = assets[0];
+  await prisma.activityLog.create({
+    data: {
+      action: 'duplicated',
+      entityType: 'asset',
+      entityId: firstAsset.id,
+      detail: `Duplicated ${assets.length} assets`,
+      userId,
+      projectId: firstAsset.projectId,
+    }
+  });
+
+  return copiedAssets;
+}
+
 

@@ -12,6 +12,32 @@ function App() {
   const [currentUser, setCurrentUser] = React.useState(null);
   const [loadingProfile, setLoadingProfile] = React.useState(true);
 
+  const [globalSearch, setGlobalSearch] = React.useState("");
+  const [notifications, setNotifications] = React.useState([
+    {
+      id: "upload-complete",
+      title: "Upload completed",
+      description: "Your asset was synced to Cloudflare storage.",
+      time: "Just now",
+      unread: true,
+      type: "upload"
+    },
+    {
+      id: "batch-ready",
+      title: "Batch job ready",
+      description: "4 assets are waiting for review.",
+      time: "12m ago",
+      unread: true,
+      type: "job"
+    }
+  ]);
+
+  React.useEffect(() => {
+    const handleClear = () => setGlobalSearch("");
+    window.addEventListener("bt:clear-global-search", handleClear);
+    return () => window.removeEventListener("bt:clear-global-search", handleClear);
+  }, []);
+
   React.useEffect(() => {
     const token = apiClient.auth.getToken();
     if (!token) {
@@ -106,7 +132,7 @@ function App() {
   const content = (() => {
     switch (screen) {
       case "dashboard": return <Dashboard />;
-      case "projects":  return <ProjectMgmt />;
+      case "projects":  return <ProjectMgmt searchQuery={globalSearch} />;
       case "workspace": return <AIWorkspace onSwitchScreen={setScreen} onActiveToolChange={setActiveToolId} />;
       case "batch":     return <BatchMode />;
       case "timeline":  return <StoryboardView />;
@@ -135,7 +161,28 @@ function App() {
     <div className="app">
       <Sidebar active={screen} onChange={onChange} />
       <main className="workspace">
-        <Topbar crumbs={crumbsMap[screen] || []} theme={theme} onToggleTheme={toggleTheme} />
+        <Topbar
+          crumbs={crumbsMap[screen] || []}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          searchQuery={globalSearch}
+          onSearchChange={setGlobalSearch}
+          onSearchSubmit={(q) => {
+            if (!q.trim()) return;
+            if (screen !== "projects") {
+              setScreen("projects");
+            }
+            window.dispatchEvent(new CustomEvent("bt:global-search-submit", { detail: { query: q } }));
+          }}
+          onClearSearch={() => setGlobalSearch("")}
+          notifications={notifications}
+          onNotificationOpen={(action) => {
+            if (action === "activity") setScreen("activity");
+            if (action === "mark-all-read") {
+              setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+            }
+          }}
+        />
         {wantsTight
           ? <div style={{flex:1, overflow:"hidden", display:"flex", flexDirection:"column"}}>{content}</div>
           : content}

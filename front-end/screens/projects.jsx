@@ -22,7 +22,7 @@ const resolveFileUrl = (url) => {
   return url;
 };
 
-function ProjectMgmt() {
+function ProjectMgmt({ searchQuery = "" }) {
   const [projects, setProjects] = React.useState([]);
   const [currentProject, setCurrentProject] = React.useState(null);
   const [folders, setFolders] = React.useState([]);
@@ -48,6 +48,20 @@ function ProjectMgmt() {
   const [aiActionMenuOpen, setAiActionMenuOpen] = React.useState(false);
   const [targetFolderId, setTargetFolderId] = React.useState(null);
 
+  // Rename states (v7.0)
+  const [renameModalOpen, setRenameModalOpen] = React.useState(false);
+  const [renameValue, setRenameValue] = React.useState("");
+  const [renamingAsset, setRenamingAsset] = React.useState(false);
+  const [renameError, setRenameError] = React.useState(null);
+
+  // Filter states (v7.0)
+  const [filterOpen, setFilterOpen] = React.useState(false);
+  const [assetFilters, setAssetFilters] = React.useState({
+    status: "all",
+    type: "all",
+    hasComments: "all",
+  });
+
   // Clear selection when project or folder changes
   React.useEffect(() => {
     setSelectedAssetIds(new Set());
@@ -62,6 +76,7 @@ function ProjectMgmt() {
         setSelectedAssetIds(new Set());
         setLastSelectedAssetId(null);
         setAiActionMenuOpen(false);
+        setFilterOpen(false);
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         if (
           document.activeElement &&
@@ -72,14 +87,25 @@ function ProjectMgmt() {
           return;
         }
         e.preventDefault();
-        if (assets.length > 0) {
-          setSelectedAssetIds(new Set(assets.map((a) => a.id)));
+        if (filteredAssets.length > 0) {
+          setSelectedAssetIds(new Set(filteredAssets.map((a) => a.id)));
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [assets]);
+  }, [filteredAssets]);
+
+  const filterContainerRef = React.useRef(null);
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (filterContainerRef.current && !filterContainerRef.current.contains(e.target)) {
+        setFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, []);
 
   // Shift-click support for multi-selection
   const handleToggleSelect = (assetId, event) => {
@@ -95,7 +121,7 @@ function ProjectMgmt() {
         }
       } else {
         if (event && event.shiftKey && lastSelectedAssetId) {
-          const visibleIds = assets.map((a) => a.id);
+          const visibleIds = filteredAssets.map((a) => a.id);
           const startIdx = visibleIds.indexOf(lastSelectedAssetId);
           const endIdx = visibleIds.indexOf(assetId);
           if (startIdx !== -1 && endIdx !== -1) {
@@ -498,6 +524,65 @@ function ProjectMgmt() {
     }
   };
 
+  function openRenameModal() {
+    const selected = selectedAssets[0];
+    if (!selected || selectedAssets.length !== 1) return;
+    setRenameValue(selected.name || "");
+    setRenameError(null);
+    setRenameModalOpen(true);
+  }
+
+  async function handleRenameAsset() {
+    const selected = selectedAssets[0];
+    const name = renameValue.trim();
+
+    if (!selected) return;
+    if (!name) {
+      setRenameError("Asset name is required");
+      return;
+    }
+
+    setRenamingAsset(true);
+    setRenameError(null);
+
+    try {
+      const updated = await assetsApi.renameAsset(selected.id, { name });
+      setAssets(prev => prev.map(a => a.id === selected.id ? { ...a, name: updated.name || updated.asset?.name || name } : a));
+      setRenameModalOpen(false);
+    } catch (err) {
+      setRenameError(err?.message || "Failed to rename asset");
+    } finally {
+      setRenamingAsset(false);
+    }
+  }
+
+  async function handleDuplicateSelected() {
+    if (selectedAssetIds.size === 0) return;
+
+    setBulkActionBusy(true);
+    setBulkActionError(null);
+
+    try {
+      const ids = Array.from(selectedAssetIds);
+      const result = await assetsApi.bulkDuplicate(ids);
+
+      const copiedAssets = result.copiedAssets || result.assets || [];
+      if (copiedAssets.length > 0) {
+        setAssets(prev => [...copiedAssets, ...prev]);
+      } else {
+        await refreshAssetGrid();
+      }
+
+      setSelectedAssetIds(new Set());
+      setLastSelectedAssetId(null);
+    } catch (err) {
+      setBulkActionError(err?.message || "Failed to duplicate assets");
+      alert(err?.message || "Failed to duplicate assets");
+    } finally {
+      setBulkActionBusy(false);
+    }
+  }
+
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
     if (!name) { setFolderError('Folder name is required'); return; }
@@ -694,6 +779,92 @@ function ProjectMgmt() {
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
 
+  const normalizedSearch = (searchQuery || "").trim().toLowerCase();
+
+  const filteredAssets = React.useMemo(() => {
+    return assets.filter(asset => {
+      if (assetFilters.status !== "all") {
+        const s = assetFilters.status.toLowerCase();
+        const assetStatus = (asset.status || "").toLowerCase();
+        if (s === "in review" || s === "in_review") {
+          if (assetStatus !== "in_review" && assetStatus !== "in review") return false;
+        } else if (s === "failed") {
+          if (assetStatus !== "failed" && assetStatus !== "rejected" && assetStatus !== "revision_requested") return false;
+        } else {
+          if (assetStatus !== s) return false;
+        }
+      }
+
+      const mime = asset.mimeType || "";
+      if (assetFilters.type === "image" && !mime.startsWith("image/")) return false;
+      if (assetFilters.type === "video" && !mime.startsWith("video/")) return false;
+      if (assetFilters.type === "audio" && !mime.startsWith("audio/")) return false;
+
+      const commentsCount = asset._count?.comments ?? asset.comments ?? 0;
+      if (assetFilters.hasComments === "yes" && commentsCount <= 0) return false;
+      if (assetFilters.hasComments === "no" && commentsCount > 0) return false;
+
+      if (normalizedSearch) {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+
+        if (!haystack.includes(normalizedSearch)) return false;
+      }
+
+      return true;
+    });
+  }, [assets, assetFilters, normalizedSearch]);
+
+  React.useEffect(() => {
+    const handleGlobalSearchSubmit = (e) => {
+      const q = e.detail?.query || "";
+      if (!q.trim()) return;
+
+      const normalizedQ = q.trim().toLowerCase();
+      const matches = filteredAssets.filter(asset => {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(normalizedQ);
+      });
+
+      if (matches.length > 0) {
+        const firstMatchId = matches[0].id;
+        setTimeout(() => {
+          const targetEl = document.getElementById(`asset-card-${firstMatchId}`);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            targetEl.classList.add("asset-card--search-hit");
+            setTimeout(() => {
+              targetEl.classList.remove("asset-card--search-hit");
+            }, 1500);
+          }
+        }, 100);
+      }
+    };
+    window.addEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+    return () => window.removeEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+  }, [filteredAssets]);
+
+  const activeFiltersCount = React.useMemo(() => {
+    let count = 0;
+    if (assetFilters.status !== "all") count++;
+    if (assetFilters.type !== "all") count++;
+    if (assetFilters.hasComments !== "all") count++;
+    return count;
+  }, [assetFilters]);
+
   const selectedAssets = React.useMemo(() => {
     return assets.filter(a => selectedAssetIds.has(a.id));
   }, [assets, selectedAssetIds]);
@@ -823,10 +994,101 @@ function ProjectMgmt() {
           <button className="btn btn--secondary" onClick={handleUploadClick} disabled={uploading}>
             {I.upload}<span>Upload</span>
           </button>
-          <button className="btn btn--secondary">{I.filter}<span>Filter</span></button>
-          <button className="btn btn--primary">{I.spark}<span>Open in AI Workspace</span></button>
+          
+          <div style={{ position: "relative" }} ref={filterContainerRef}>
+            <button
+              className={`btn btn--secondary ${activeFiltersCount > 0 ? "btn--active" : ""}`}
+              onClick={() => setFilterOpen(v => !v)}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              {I.filter}
+              <span>Filter</span>
+              {activeFiltersCount > 0 && (
+                <span className="filter-badge" style={{
+                  background: "var(--accent, #3b82f6)",
+                  color: "#ffffff",
+                  borderRadius: "50%",
+                  width: 18,
+                  height: 18,
+                  fontSize: 10,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: "bold",
+                  marginLeft: 4
+                }}>{activeFiltersCount}</span>
+              )}
+            </button>
+
+            {filterOpen && (
+              <div className="asset-filter-popover" onClick={(e) => e.stopPropagation()}>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Status</span>
+                  <select
+                    value={assetFilters.status}
+                    onChange={(e) => setAssetFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="asset-filter-select"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="WIP">WIP</option>
+                    <option value="IN_REVIEW">In Review</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </label>
+
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Type</span>
+                  <select
+                    value={assetFilters.type}
+                    onChange={(e) => setAssetFilters(prev => ({ ...prev, type: e.target.value }))}
+                    className="asset-filter-select"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="image">Image</option>
+                    <option value="video">Video</option>
+                    <option value="audio">Audio</option>
+                  </select>
+                </label>
+
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Comments</span>
+                  <select
+                    value={assetFilters.hasComments}
+                    onChange={(e) => setAssetFilters(prev => ({ ...prev, hasComments: e.target.value }))}
+                    className="asset-filter-select"
+                  >
+                    <option value="all">All</option>
+                    <option value="yes">Has comments</option>
+                    <option value="no">No comments</option>
+                  </select>
+                </label>
+
+                <div className="asset-filter-actions">
+                  <button
+                    className="asset-filter-clear"
+                    onClick={() => setAssetFilters({ status: "all", type: "all", hasComments: "all" })}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    className="asset-filter-close"
+                    onClick={() => setFilterOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn--primary" onClick={() => handleUseWithAI("upscaler", "upscale")}>{I.spark}<span>Open in AI Workspace</span></button>
         </div>
-        <p className="page-sub">{assets.length} generated files · {loading ? "loading updates..." : "synced with database"}</p>
+        <p className="page-sub">
+          {activeFiltersCount > 0 ? `${filteredAssets.length} of ${assets.length}` : assets.length} generated files · {loading ? "loading updates..." : "synced with database"}
+        </p>
 
         {/* Project info card */}
         <div className="project-card-info">
@@ -901,6 +1163,28 @@ function ProjectMgmt() {
         <div className="section-title" style={{marginTop:0}}>
           <h2>Generated Files</h2>
           <span className="count">{assets.length} TOTAL</span>
+          {searchQuery && (
+            <span className="search-result-label" style={{ marginLeft: 16, fontSize: 13, color: "var(--ink-3)", display: "flex", alignItems: "center", gap: 8 }}>
+              Search: <strong>“{searchQuery}”</strong> · {filteredAssets.length} {filteredAssets.length === 1 ? "result" : "results"}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("bt:clear-global-search"));
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--accent, #3b82f6)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  padding: "0 4px",
+                  textDecoration: "underline"
+                }}
+              >
+                [Clear]
+              </button>
+            </span>
+          )}
           <span className="spacer" />
           <div className="segmented">
             <button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}>Grid</button>
@@ -909,15 +1193,19 @@ function ProjectMgmt() {
           </div>
         </div>
 
-        {assets.length === 0 ? (
+        {filteredAssets.length === 0 ? (
           <div className="card card--pad" style={{padding: 48, textAlign: "center", color:"var(--ink-3)"}}>
             <div style={{fontSize: 32, marginBottom: 12}}>{I.folder}</div>
-            <h3 style={{margin: "0 0 6px"}}>No assets found</h3>
-            <p style={{margin: 0, color: "var(--ink-4)"}}>Generate new frames in the AI Workspace or upload assets to begin.</p>
+            <h3 style={{margin: "0 0 6px"}}>{assets.length === 0 ? "No assets found" : "No assets match active filters"}</h3>
+            <p style={{margin: 0, color: "var(--ink-4)"}}>
+              {assets.length === 0
+                ? "Generate new frames in the AI Workspace or upload assets to begin."
+                : "Try clearing your filters to see all assets."}
+            </p>
           </div>
         ) : view === "grid" ? (
           <div className="asset-grid">
-            {assets.map((a, i) => {
+            {filteredAssets.map((a, i) => {
               const statusKey = a.status || "DRAFT";
               const [cls, label] = STATUS[statusKey] ?? ["chip chip--draft", "Draft"];
               const commentsCount = a._count?.comments ?? a.comments ?? 0;
@@ -926,6 +1214,7 @@ function ProjectMgmt() {
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
                 <div
+                  id={`asset-card-${a.id}`}
                   className={`asset-card asset-card--clickable ${selectedAssetIds.has(a.id) ? 'asset-card--selected' : ''}`}
                   key={a.id || i}
                   data-asset-id={a.id}
@@ -974,14 +1263,14 @@ function ProjectMgmt() {
           </div>
         ) : view === "list" ? (
           <AssetList
-            assets={assets}
+            assets={filteredAssets}
             onSelect={handleOpenAsset}
             selectedAssetIds={selectedAssetIds}
             onToggleSelect={handleToggleSelect}
           />
         ) : (
           <AssetCompare
-            assets={assets}
+            assets={filteredAssets}
             onSelect={handleOpenAsset}
             selectedAssetIds={selectedAssetIds}
             onToggleSelect={handleToggleSelect}
@@ -1062,10 +1351,12 @@ function ProjectMgmt() {
           totalSizeBytes={selectedAssetsTotalSize}
           onClear={() => { setSelectedAssetIds(new Set()); setLastSelectedAssetId(null); }}
           onUseWithAI={() => handleUseWithAI("upscaler", "upscale")}
-          onMove={() => setMoveModalOpen(true)}
-          onCopy={() => setCopyModalOpen(true)}
+          onRename={openRenameModal}
           onDownload={handleBulkDownload}
           onDelete={handleBulkDelete}
+          onDuplicate={handleDuplicateSelected}
+          onMoveTo={() => setMoveModalOpen(true)}
+          onCopyTo={() => setCopyModalOpen(true)}
         />
       )}
 
@@ -1119,6 +1410,63 @@ function ProjectMgmt() {
           </div>
         </div>
       )}
+      {/* ── Rename Asset Modal ── */}
+      {renameModalOpen && (
+        <div
+          className="move-copy-modal"
+          onClick={() => setRenameModalOpen(false)}
+        >
+          <div
+            className="move-copy-modal__card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 380 }}
+          >
+            <div className="move-copy-modal__head">
+              <h3>Rename Asset</h3>
+              <button
+                className="icon-btn icon-btn--light"
+                onClick={() => setRenameModalOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="move-copy-modal__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input
+                autoFocus
+                type="text"
+                className="input"
+                placeholder="Asset name"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameAsset();
+                  if (e.key === 'Escape') setRenameModalOpen(false);
+                }}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+              {renameError && (
+                <div style={{ fontSize: 12, color: 'var(--st-failed)' }}>{renameError}</div>
+              )}
+            </div>
+            <div className="move-copy-modal__foot" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button
+                className="btn btn--ghost"
+                onClick={() => setRenameModalOpen(false)}
+                disabled={renamingAsset}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={handleRenameAsset}
+                disabled={renamingAsset || !renameValue.trim()}
+              >
+                {renamingAsset ? 'Renaming…' : 'Rename'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1149,6 +1497,7 @@ function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
         const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
         return (
           <div
+            id={`asset-card-${a.id}`}
             className={`asset-table__row ${isSelected ? "asset-table__row--selected" : ""}`}
             key={a.id || i}
             onClick={() => onSelect?.(a)}
@@ -1224,7 +1573,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
     const commentsCount = asset._count?.comments ?? asset.comments ?? 0;
     const creatorName = asset.creator?.name ?? "System";
     return (
-      <div className="asset-compare__col">
+      <div className="asset-compare__col" id={`asset-card-${asset.id}`}>
         <div className="asset-compare__col-head">
           <span style={{fontFamily:"var(--f-mono)", fontSize: 10.5, letterSpacing:"0.12em", color:"var(--ink-4)"}}>{side}</span>
           <span style={{fontFamily:"var(--f-mono)", fontSize: 12.5, color:"var(--ink)", flex: 1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{asset.name}</span>
@@ -1610,10 +1959,12 @@ function AssetSelectionBar({
   totalSizeBytes,
   onClear,
   onUseWithAI,
-  onMove,
-  onCopy,
+  onRename,
   onDownload,
   onDelete,
+  onDuplicate,
+  onMoveTo,
+  onCopyTo,
 }) {
   const [moreOpen, setMoreOpen] = React.useState(false);
 
@@ -1645,8 +1996,15 @@ function AssetSelectionBar({
 
       <div className="asset-selection-bar__actions">
         <button className="selection-action" onClick={onUseWithAI}>Use with AI</button>
-        <button className="selection-action" onClick={onMove}>Move to</button>
-        <button className="selection-action" onClick={onCopy}>Copy to</button>
+
+        {selectedAssets.length === 1 ? (
+          <button className="selection-action" onClick={onRename}>Rename</button>
+        ) : (
+          <button className="selection-action" disabled title="Rename is only available for one asset">
+            Rename
+          </button>
+        )}
+
         <button className="selection-action" onClick={onDownload}>Download</button>
 
         <div className="selection-more" ref={ref}>
@@ -1656,10 +2014,10 @@ function AssetSelectionBar({
 
           {moreOpen && (
             <div className="selection-more-menu">
-              <button onClick={() => { onDelete(); setMoreOpen(false); }}>Delete</button>
-              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Duplicate</button>
-              <button onClick={() => { onMove(); setMoreOpen(false); }}>Move to</button>
-              <button onClick={() => { onCopy(); setMoreOpen(false); }}>Copy to</button>
+              <button className="selection-action--danger" onClick={() => { onDelete(); setMoreOpen(false); }}>Delete</button>
+              <button onClick={() => { onDuplicate(); setMoreOpen(false); }}>Duplicate</button>
+              <button onClick={() => { onMoveTo(); setMoreOpen(false); }}>Move to</button>
+              <button onClick={() => { onCopyTo(); setMoreOpen(false); }}>Copy to</button>
             </div>
           )}
         </div>

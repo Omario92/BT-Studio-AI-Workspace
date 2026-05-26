@@ -37,16 +37,17 @@ function UpscalerWorkbench({ tool, onBack }) {
       const raw = localStorage.getItem("bt_selected_assets_for_ai");
       if (!raw) return null;
       const ctx = JSON.parse(raw);
-      if (ctx && Array.isArray(ctx.assets) && ctx.assets.length > 0 && (ctx.toolId === "upscaler" || ctx.jobType === "IMAGE_UPSCALE")) {
-        return { ...ctx.assets[0], projectId: ctx.projectId || ctx.assets[0].projectId };
-      }
-      return null;
+      const first = ctx?.assets?.[0];
+      if (!first) return null;
+      // If a tool was specified, only accept upscaler context; otherwise pass through.
+      if (ctx.toolId && ctx.toolId !== "upscaler" && ctx.jobType !== "IMAGE_UPSCALE") return null;
+      return { ...first, projectId: ctx.projectId || first.projectId };
     } catch (e) { return null; }
   });
 
   const [currentJob, setCurrentJob] = React.useState(null);
   const [progress, setProgress] = React.useState(0);
-  const [outputResult, setOutputResult] = React.useState(null); // { fileUrl, assetId, assetVersionId, provider, mockFallback }
+  const [outputResult, setOutputResult] = React.useState(null); // { fileUrl, assetId, assetVersionId, provider, mockFallback, displayUrl }
   const [submitError, setSubmitError] = React.useState(null);
   const pollTimerRef = React.useRef(null);
 
@@ -142,6 +143,7 @@ function UpscalerWorkbench({ tool, onBack }) {
     } catch (e) {}
   };
 
+
   return (
     <>
       <WorkbenchHead tool={tool} onBack={onBack} />
@@ -166,8 +168,8 @@ function UpscalerWorkbench({ tool, onBack }) {
                 display: "flex", alignItems: "center", gap: 10
               }}>
                 <div style={{width: 56, height: 56, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas-2)"}}>
-                  {sourceAsset?.previewUrl ? (
-                    <img src={sourceAsset.previewUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "cover"}} />
+                  {(sourceAsset?.previewUrl || sourceAsset?.fileUrl) ? (
+                    <img src={sourceAsset.previewUrl || sourceAsset.fileUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "cover"}} />
                   ) : (
                     <Placeholder tone="violet" label="" style={{height:"100%", borderRadius: 0}} />
                   )}
@@ -177,7 +179,7 @@ function UpscalerWorkbench({ tool, onBack }) {
                     {sourceAsset?.name || "No source selected"}
                   </div>
                   <div style={{fontFamily:"var(--f-mono)", fontSize: 10, color:"var(--ink-on-dark-3)", marginTop: 2}}>
-                    {sourceAsset ? `${sourceAsset.mimeType || "image"} · v${sourceAsset.currentVersion ?? 1}` : "Use 'Use with AI' from Projects"}
+                    {sourceAsset ? `${sourceAsset.mimeType || "image/png"} · v${sourceAsset.currentVersion ?? 1}` : "Pick from Projects → Use with AI"}
                   </div>
                 </div>
                 {sourceAsset && (
@@ -259,7 +261,11 @@ function UpscalerWorkbench({ tool, onBack }) {
             </div>
           </div>
           <div className="up-side__foot">
-            <button className="btn btn--secondary" style={{flex:1, justifyContent:"center", background:"var(--bg-input-dark)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}} onClick={() => { setFactor("4x"); setFace(true); setDetail(72); setDenoise(45); }}>Reset</button>
+            <button
+              className="btn btn--secondary"
+              style={{flex:1, justifyContent:"center", background:"var(--bg-input-dark)", color:"var(--ink-on-dark)", borderColor:"var(--line-on-dark-2)"}}
+              disabled={isGenerating}
+              onClick={() => { setFactor("4x"); setFace(true); setDetail(72); setDenoise(45); }}>Reset</button>
             <button
               className="btn btn--primary"
               style={{flex:2, justifyContent:"center"}}
@@ -295,8 +301,8 @@ function UpscalerWorkbench({ tool, onBack }) {
           <div className="up-canvas__stage">
             <div className="compare">
               <div className="before" style={{position: "relative", overflow: "hidden"}}>
-                {sourceAsset?.previewUrl ? (
-                  <img src={sourceAsset.previewUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "contain"}} />
+                {(sourceAsset?.previewUrl || sourceAsset?.fileUrl) ? (
+                  <img src={sourceAsset.previewUrl || sourceAsset.fileUrl} alt={sourceAsset.name} style={{width: "100%", height: "100%", objectFit: "contain"}} />
                 ) : (
                   <Placeholder tone="violet" label="" />
                 )}
@@ -334,6 +340,7 @@ function UpscalerWorkbench({ tool, onBack }) {
               <span>Denoise: <b>{denoise}%</b></span>
               {outputResult?.provider && <span>Provider: <b>{outputResult.provider}</b></span>}
               {outputResult?.assetVersionId && <span style={{color: "var(--st-approved)"}}><b>Created new AssetVersion</b></span>}
+              {submitError && <span style={{color: "var(--st-failed)"}}>⚠ {submitError}</span>}
             </div>
             <span className="spacer" />
             {outputResult?.displayUrl && (

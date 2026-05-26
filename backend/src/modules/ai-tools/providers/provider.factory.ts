@@ -5,23 +5,26 @@ import { MockProvider } from './mock.provider';
 import { RunPodProvider } from './runpod.provider';
 import { ComfyUIProvider } from './comfyui.provider';
 import { DispatcherProvider } from './dispatcher.provider';
+import { ReplicateProvider } from './replicate.provider';
 
 const mockProvider = new MockProvider();
 const runpodProvider = new RunPodProvider();
 const comfyuiProvider = new ComfyUIProvider();
 const dispatcherProvider = new DispatcherProvider();
+const replicateProvider = new ReplicateProvider();
 
 const REGISTRY: Record<string, AIProvider> = {
   mock: mockProvider,
   runpod: runpodProvider,
   comfyui: comfyuiProvider,
   dispatcher: dispatcherProvider,
+  replicate: replicateProvider,
 };
 
 /**
  * Resolve a provider instance by name. Returns mock if name is unknown.
  * NOTE: this is a direct lookup — for IMAGE_UPSCALE we prefer
- * `getAIProviderForUpscale()` below which adds graceful fallback.
+ * `resolveUpscaleProviderChain()` below which adds graceful fallback.
  */
 export function getAIProvider(providerName?: string): AIProvider {
   const name = (providerName || 'mock').toLowerCase();
