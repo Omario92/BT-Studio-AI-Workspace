@@ -6673,6 +6673,10 @@ function WorkbenchHead({ tool, onBack, extra }) {
       {extra}
       <button className="btn btn--secondary">{I.history}<span>History</span></button>
       <button className="btn btn--secondary">{I.save}<span>Save preset</span></button>
+    </div>
+  );
+}
+
 function getAssetPreviewCandidate(asset) {
   return (
     asset?.previewUrl ||
