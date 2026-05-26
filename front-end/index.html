@@ -3231,14 +3231,210 @@ input, textarea { outline: none; }
 /* filter popover rules (v7.0) */
 .asset-filter-popover {
   position: absolute;
-  z-index: 90;
+  right: 0;
+  top: calc(100% + 8px);
   width: 280px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #181b22;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  padding: 14px;
+  border-radius: 14px;
+  z-index: 90;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.22);
 }
+
+[data-theme="light"] .asset-filter-popover {
+  background: #ffffff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  color: #111827;
+}
+
+[data-theme="dark"] .asset-filter-popover {
+  background: #151821;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #f8fafc;
+}
+
+.asset-filter-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.asset-filter-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+[data-theme="light"] .asset-filter-label {
+  color: #667085;
+}
+
+[data-theme="dark"] .asset-filter-label {
+  color: rgba(255,255,255,0.58);
+}
+
+.asset-filter-select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+[data-theme="light"] .asset-filter-select {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid rgba(16, 24, 40, 0.18);
+}
+
+[data-theme="dark"] .asset-filter-select {
+  background: #090b10;
+  color: #f8fafc;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.asset-filter-select option {
+  color: #111827;
+  background: #ffffff;
+}
+
+[data-theme="dark"] .asset-filter-select option {
+  color: #f8fafc;
+  background: #111827;
+}
+
+.asset-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.asset-filter-clear,
+.asset-filter-close {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+[data-theme="light"] .asset-filter-clear {
+  color: #475467;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+[data-theme="dark"] .asset-filter-clear {
+  color: rgba(255,255,255,0.72);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.asset-filter-close {
+  color: #ffffff;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+}
+
+/* Notifications rules */
+.topbar-notification {
+  position: relative;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ef4444;
+}
+
+.notification-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 340px;
+  border-radius: 14px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+}
+
+[data-theme="light"] .notification-popover {
+  background: #ffffff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  color: #111827;
+}
+
+[data-theme="dark"] .notification-popover {
+  background: #151821;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #f8fafc;
+}
+
+.notification-popover__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(128,128,128,0.16);
+}
+
+.notification-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(128,128,128,0.12);
+  cursor: pointer;
+  text-align: left;
+}
+
+.notification-item:hover {
+  background: rgba(59,130,246,0.08);
+}
+
+.notification-item--unread .notification-item__title::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #2563eb;
+  margin-right: 8px;
+}
+
+.notification-item__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notification-item__description {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.notification-item__time {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+/* Search Highlights */
+.asset-card--search-hit {
+  outline: 2px solid #2563eb !important;
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.5) !important;
+  transition: outline 0.15s ease, box-shadow 0.15s ease;
+}
+
 
 @media (max-width: 1100px) {
   .asset-selection-bar {
@@ -3537,8 +3733,57 @@ window.Sidebar = Sidebar;
 
 </script>
 <script type="text/babel">
-function Topbar({ crumbs = [], onLogout, hideSearch = false, right, theme = "light", onToggleTheme }) {
+function Topbar({
+  crumbs = [],
+  onLogout,
+  hideSearch = false,
+  right,
+  theme = "light",
+  onToggleTheme,
+  searchQuery = "",
+  onSearchChange,
+  onSearchSubmit,
+  onClearSearch,
+  notifications = [],
+  onNotificationOpen,
+}) {
   const isDark = theme === "dark";
+  const [notificationOpen, setNotificationOpen] = React.useState(false);
+  const notifRef = React.useRef(null);
+  const searchInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  React.useEffect(() => {
+    const clickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotificationOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, []);
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === "Enter") {
+      onSearchSubmit?.(searchQuery);
+    } else if (e.key === "Escape") {
+      onClearSearch?.();
+      searchInputRef.current?.blur();
+    }
+  };
+
+  const hasUnread = notifications.some(n => n.unread);
+
   return (
     <div className="topbar">
       <div className="crumbs">
@@ -3553,18 +3798,101 @@ function Topbar({ crumbs = [], onLogout, hideSearch = false, right, theme = "lig
       </div>
 
       {hideSearch ? <div style={{flex:1}} /> : (
-        <div className="topbar__search">
-          <span style={{color: "var(--ink-4)"}}>{I.search}</span>
-          <input placeholder="Search projects, assets, prompts…" />
-          <kbd>⌘K</kbd>
+        <div className="topbar__search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <span style={{color: "var(--ink-4)", marginRight: 8}}>{I.search}</span>
+          <input
+            ref={searchInputRef}
+            placeholder="Search projects, assets, prompts…"
+            value={searchQuery}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', color: 'var(--ink)' }}
+          />
+          {searchQuery ? (
+            <button
+              onClick={onClearSearch}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--ink-4)',
+                cursor: 'pointer',
+                fontSize: 16,
+                fontWeight: 'bold',
+                padding: '0 8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Clear search"
+            >
+              ×
+            </button>
+          ) : (
+            <kbd style={{ userSelect: 'none' }}>⌘K</kbd>
+          )}
         </div>
       )}
 
       <div className="topbar__actions">
         {right}
-        <button className="icon-btn icon-btn--light notif-btn" title="Notifications">
-          {I.bell}<span className="dot" />
-        </button>
+        
+        {/* Notifications (v7.0) */}
+        <div className="topbar-notification" ref={notifRef} style={{ position: 'relative' }}>
+          <button
+            className="icon-btn icon-btn--light notification-button"
+            title="Notifications"
+            onClick={() => setNotificationOpen(v => !v)}
+          >
+            {I.bell}
+            {hasUnread && <span className="notification-dot" />}
+          </button>
+
+          {notificationOpen && (
+            <div className="notification-popover">
+              <div className="notification-popover__header">
+                <span style={{ fontWeight: 700, fontSize: 13 }}>Notifications</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn--ghost sm"
+                    style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                    onClick={() => { onNotificationOpen?.("mark-all-read"); }}
+                  >
+                    Mark all read
+                  </button>
+                  <button
+                    className="btn btn--primary sm"
+                    style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                    onClick={() => { onNotificationOpen?.("activity"); setNotificationOpen(false); }}
+                  >
+                    View Activity
+                  </button>
+                </div>
+              </div>
+              <div className="notification-popover__body" style={{ maxHeight: 320, overflowY: "auto" }}>
+                {notifications.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "var(--ink-4)", fontSize: 12.5 }}>
+                    No new notifications.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`notification-item ${n.unread ? "notification-item--unread" : ""}`}
+                      onClick={() => {}}
+                    >
+                      <div className="notification-item__title">
+                        {n.title}
+                      </div>
+                      <div className="notification-item__description">{n.description}</div>
+                      <div className="notification-item__time">{n.time}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button
           className="icon-btn icon-btn--light"
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
@@ -3977,7 +4305,7 @@ const resolveFileUrl = (url) => {
   return url;
 };
 
-function ProjectMgmt() {
+function ProjectMgmt({ searchQuery = "" }) {
   const [projects, setProjects] = React.useState([]);
   const [currentProject, setCurrentProject] = React.useState(null);
   const [folders, setFolders] = React.useState([]);
@@ -4031,6 +4359,7 @@ function ProjectMgmt() {
         setSelectedAssetIds(new Set());
         setLastSelectedAssetId(null);
         setAiActionMenuOpen(false);
+        setFilterOpen(false);
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         if (
           document.activeElement &&
@@ -4681,6 +5010,8 @@ function ProjectMgmt() {
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
 
+  const normalizedSearch = (searchQuery || "").trim().toLowerCase();
+
   const filteredAssets = React.useMemo(() => {
     return assets.filter(asset => {
       if (assetFilters.status !== "all") {
@@ -4704,9 +5035,58 @@ function ProjectMgmt() {
       if (assetFilters.hasComments === "yes" && commentsCount <= 0) return false;
       if (assetFilters.hasComments === "no" && commentsCount > 0) return false;
 
+      if (normalizedSearch) {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+
+        if (!haystack.includes(normalizedSearch)) return false;
+      }
+
       return true;
     });
-  }, [assets, assetFilters]);
+  }, [assets, assetFilters, normalizedSearch]);
+
+  React.useEffect(() => {
+    const handleGlobalSearchSubmit = (e) => {
+      const q = e.detail?.query || "";
+      if (!q.trim()) return;
+
+      const normalizedQ = q.trim().toLowerCase();
+      const matches = filteredAssets.filter(asset => {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(normalizedQ);
+      });
+
+      if (matches.length > 0) {
+        const firstMatchId = matches[0].id;
+        setTimeout(() => {
+          const targetEl = document.getElementById(`asset-card-${firstMatchId}`);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            targetEl.classList.add("asset-card--search-hit");
+            setTimeout(() => {
+              targetEl.classList.remove("asset-card--search-hit");
+            }, 1500);
+          }
+        }, 100);
+      }
+    };
+    window.addEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+    return () => window.removeEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+  }, [filteredAssets]);
 
   const activeFiltersCount = React.useMemo(() => {
     let count = 0;
@@ -4872,28 +5252,13 @@ function ProjectMgmt() {
             </button>
 
             {filterOpen && (
-              <div className="asset-filter-popover" style={{
-                position: "absolute",
-                top: "calc(100% + 8px)",
-                right: 0,
-                zIndex: 9999,
-                width: 260,
-                background: "#181b22",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 12,
-                padding: 16,
-                boxShadow: "0 12px 36px rgba(0,0,0,0.4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 12
-              }}>
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Status</label>
+              <div className="asset-filter-popover" onClick={(e) => e.stopPropagation()}>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Status</span>
                   <select
                     value={assetFilters.status}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, status: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All Statuses</option>
                     <option value="DRAFT">Draft</option>
@@ -4903,49 +5268,45 @@ function ProjectMgmt() {
                     <option value="REJECTED">Rejected</option>
                     <option value="failed">Failed</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Type</label>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Type</span>
                   <select
                     value={assetFilters.type}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, type: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All Types</option>
                     <option value="image">Image</option>
                     <option value="video">Video</option>
                     <option value="audio">Audio</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Comments</label>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Comments</span>
                   <select
                     value={assetFilters.hasComments}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, hasComments: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All</option>
                     <option value="yes">Has comments</option>
                     <option value="no">No comments</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <div className="asset-filter-actions">
                   <button
-                    className="btn btn--ghost sm"
+                    className="asset-filter-clear"
                     onClick={() => setAssetFilters({ status: "all", type: "all", hasComments: "all" })}
-                    style={{ padding: "4px 8px", fontSize: 12 }}
                   >
                     Clear
                   </button>
                   <button
-                    className="btn btn--primary sm"
+                    className="asset-filter-close"
                     onClick={() => setFilterOpen(false)}
-                    style={{ padding: "4px 12px", fontSize: 12 }}
                   >
                     Close
                   </button>
@@ -5033,6 +5394,28 @@ function ProjectMgmt() {
         <div className="section-title" style={{marginTop:0}}>
           <h2>Generated Files</h2>
           <span className="count">{assets.length} TOTAL</span>
+          {searchQuery && (
+            <span className="search-result-label" style={{ marginLeft: 16, fontSize: 13, color: "var(--ink-3)", display: "flex", alignItems: "center", gap: 8 }}>
+              Search: <strong>“{searchQuery}”</strong> · {filteredAssets.length} {filteredAssets.length === 1 ? "result" : "results"}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("bt:clear-global-search"));
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--accent, #3b82f6)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  padding: "0 4px",
+                  textDecoration: "underline"
+                }}
+              >
+                [Clear]
+              </button>
+            </span>
+          )}
           <span className="spacer" />
           <div className="segmented">
             <button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}>Grid</button>
@@ -5062,6 +5445,7 @@ function ProjectMgmt() {
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
                 <div
+                  id={`asset-card-${a.id}`}
                   className={`asset-card asset-card--clickable ${selectedAssetIds.has(a.id) ? 'asset-card--selected' : ''}`}
                   key={a.id || i}
                   onClick={() => handleOpenAsset(a)}
@@ -5343,6 +5727,7 @@ function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
         const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
         return (
           <div
+            id={`asset-card-${a.id}`}
             className={`asset-table__row ${isSelected ? "asset-table__row--selected" : ""}`}
             key={a.id || i}
             onClick={() => onSelect?.(a)}
@@ -5418,7 +5803,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
     const commentsCount = asset._count?.comments ?? asset.comments ?? 0;
     const creatorName = asset.creator?.name ?? "System";
     return (
-      <div className="asset-compare__col">
+      <div className="asset-compare__col" id={`asset-card-${asset.id}`}>
         <div className="asset-compare__col-head">
           <span style={{fontFamily:"var(--f-mono)", fontSize: 10.5, letterSpacing:"0.12em", color:"var(--ink-4)"}}>{side}</span>
           <span style={{fontFamily:"var(--f-mono)", fontSize: 12.5, color:"var(--ink)", flex: 1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{asset.name}</span>
@@ -8041,19 +8426,6 @@ window.StoryboardView = StoryboardView;
 </script>
 <script type="text/babel">
 function App() {
-  // Resolve components from window at render time (Babel processes 15 blocks concurrently;
-  // top-level destructuring would capture undefined before other blocks finish)
-  const Login           = window.Login;
-  const Dashboard       = window.Dashboard;
-  const ProjectMgmt     = window.ProjectMgmt;
-  const AIWorkspace     = window.AIWorkspace;
-  const TemplateLibrary = window.TemplateLibrary;
-  const ActivityLog     = window.ActivityLog;
-  const BatchMode       = window.BatchMode;
-  const StoryboardView  = window.StoryboardView;
-  const Sidebar         = window.Sidebar;
-  const Topbar          = window.Topbar;
-
   const [screen, setScreen] = React.useState(() => {
     const stored = (() => { try { return localStorage.getItem("bt_screen"); } catch(e) { return null; } })();
     return stored || "login";
@@ -8067,11 +8439,33 @@ function App() {
   const [currentUser, setCurrentUser] = React.useState(null);
   const [loadingProfile, setLoadingProfile] = React.useState(true);
 
-  React.useEffect(() => {
-    if (typeof apiClient === "undefined") {
-      setLoadingProfile(false);
-      return;
+  const [globalSearch, setGlobalSearch] = React.useState("");
+  const [notifications, setNotifications] = React.useState([
+    {
+      id: "upload-complete",
+      title: "Upload completed",
+      description: "Your asset was synced to Cloudflare storage.",
+      time: "Just now",
+      unread: true,
+      type: "upload"
+    },
+    {
+      id: "batch-ready",
+      title: "Batch job ready",
+      description: "4 assets are waiting for review.",
+      time: "12m ago",
+      unread: true,
+      type: "job"
     }
+  ]);
+
+  React.useEffect(() => {
+    const handleClear = () => setGlobalSearch("");
+    window.addEventListener("bt:clear-global-search", handleClear);
+    return () => window.removeEventListener("bt:clear-global-search", handleClear);
+  }, []);
+
+  React.useEffect(() => {
     const token = apiClient.auth.getToken();
     if (!token) {
       setScreen("login");
@@ -8105,9 +8499,7 @@ function App() {
 
   const onChange = (id) => {
     if (id === "login") {
-      if (typeof apiClient !== "undefined") {
-        apiClient.auth.logout();
-      }
+      apiClient.auth.logout();
       setCurrentUser(null);
     }
     setScreen(id);
@@ -8167,7 +8559,7 @@ function App() {
   const content = (() => {
     switch (screen) {
       case "dashboard": return <Dashboard />;
-      case "projects":  return <ProjectMgmt />;
+      case "projects":  return <ProjectMgmt searchQuery={globalSearch} />;
       case "workspace": return <AIWorkspace onSwitchScreen={setScreen} onActiveToolChange={setActiveToolId} />;
       case "batch":     return <BatchMode />;
       case "timeline":  return <StoryboardView />;
@@ -8196,7 +8588,28 @@ function App() {
     <div className="app">
       <Sidebar active={screen} onChange={onChange} />
       <main className="workspace">
-        <Topbar crumbs={crumbsMap[screen] || []} theme={theme} onToggleTheme={toggleTheme} />
+        <Topbar
+          crumbs={crumbsMap[screen] || []}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          searchQuery={globalSearch}
+          onSearchChange={setGlobalSearch}
+          onSearchSubmit={(q) => {
+            if (!q.trim()) return;
+            if (screen !== "projects") {
+              setScreen("projects");
+            }
+            window.dispatchEvent(new CustomEvent("bt:global-search-submit", { detail: { query: q } }));
+          }}
+          onClearSearch={() => setGlobalSearch("")}
+          notifications={notifications}
+          onNotificationOpen={(action) => {
+            if (action === "activity") setScreen("activity");
+            if (action === "mark-all-read") {
+              setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+            }
+          }}
+        />
         {wantsTight
           ? <div style={{flex:1, overflow:"hidden", display:"flex", flexDirection:"column"}}>{content}</div>
           : content}
@@ -8205,17 +8618,7 @@ function App() {
   );
 }
 
-// Babel Standalone compiles all script blocks concurrently; poll until every
-// component window global is set before mounting React.
-(function waitAndRender() {
-  const needed = ['Dashboard','Sidebar','Topbar','Login','ProjectMgmt',
-                  'AIWorkspace','TemplateLibrary','ActivityLog','BatchMode','StoryboardView'];
-  if (needed.every(k => window[k])) {
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  } else {
-    setTimeout(waitAndRender, 16);
-  }
-})();
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 
 </script>
 </body>

@@ -22,7 +22,7 @@ const resolveFileUrl = (url) => {
   return url;
 };
 
-function ProjectMgmt() {
+function ProjectMgmt({ searchQuery = "" }) {
   const [projects, setProjects] = React.useState([]);
   const [currentProject, setCurrentProject] = React.useState(null);
   const [folders, setFolders] = React.useState([]);
@@ -76,6 +76,7 @@ function ProjectMgmt() {
         setSelectedAssetIds(new Set());
         setLastSelectedAssetId(null);
         setAiActionMenuOpen(false);
+        setFilterOpen(false);
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         if (
           document.activeElement &&
@@ -726,6 +727,8 @@ function ProjectMgmt() {
     return list;
   }, [projects, currentProject, folders, activeFolderId]);
 
+  const normalizedSearch = (searchQuery || "").trim().toLowerCase();
+
   const filteredAssets = React.useMemo(() => {
     return assets.filter(asset => {
       if (assetFilters.status !== "all") {
@@ -749,9 +752,58 @@ function ProjectMgmt() {
       if (assetFilters.hasComments === "yes" && commentsCount <= 0) return false;
       if (assetFilters.hasComments === "no" && commentsCount > 0) return false;
 
+      if (normalizedSearch) {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+
+        if (!haystack.includes(normalizedSearch)) return false;
+      }
+
       return true;
     });
-  }, [assets, assetFilters]);
+  }, [assets, assetFilters, normalizedSearch]);
+
+  React.useEffect(() => {
+    const handleGlobalSearchSubmit = (e) => {
+      const q = e.detail?.query || "";
+      if (!q.trim()) return;
+
+      const normalizedQ = q.trim().toLowerCase();
+      const matches = filteredAssets.filter(asset => {
+        const haystack = [
+          asset.name,
+          asset.mimeType,
+          asset.status,
+          asset.creator?.name,
+          asset.metadata?.originalFileName,
+          asset.metadata?.fileKey,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(normalizedQ);
+      });
+
+      if (matches.length > 0) {
+        const firstMatchId = matches[0].id;
+        setTimeout(() => {
+          const targetEl = document.getElementById(`asset-card-${firstMatchId}`);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            targetEl.classList.add("asset-card--search-hit");
+            setTimeout(() => {
+              targetEl.classList.remove("asset-card--search-hit");
+            }, 1500);
+          }
+        }, 100);
+      }
+    };
+    window.addEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+    return () => window.removeEventListener("bt:global-search-submit", handleGlobalSearchSubmit);
+  }, [filteredAssets]);
 
   const activeFiltersCount = React.useMemo(() => {
     let count = 0;
@@ -917,28 +969,13 @@ function ProjectMgmt() {
             </button>
 
             {filterOpen && (
-              <div className="asset-filter-popover" style={{
-                position: "absolute",
-                top: "calc(100% + 8px)",
-                right: 0,
-                zIndex: 9999,
-                width: 260,
-                background: "#181b22",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 12,
-                padding: 16,
-                boxShadow: "0 12px 36px rgba(0,0,0,0.4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 12
-              }}>
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Status</label>
+              <div className="asset-filter-popover" onClick={(e) => e.stopPropagation()}>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Status</span>
                   <select
                     value={assetFilters.status}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, status: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All Statuses</option>
                     <option value="DRAFT">Draft</option>
@@ -948,49 +985,45 @@ function ProjectMgmt() {
                     <option value="REJECTED">Rejected</option>
                     <option value="failed">Failed</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Type</label>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Type</span>
                   <select
                     value={assetFilters.type}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, type: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All Types</option>
                     <option value="image">Image</option>
                     <option value="video">Video</option>
                     <option value="audio">Audio</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-group" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Comments</label>
+                <label className="asset-filter-field">
+                  <span className="asset-filter-label">Comments</span>
                   <select
                     value={assetFilters.hasComments}
                     onChange={(e) => setAssetFilters(prev => ({ ...prev, hasComments: e.target.value }))}
-                    className="select"
-                    style={{ width: "100%", padding: "6px 8px", background: "#0d0f12", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "var(--ink-1)" }}
+                    className="asset-filter-select"
                   >
                     <option value="all">All</option>
                     <option value="yes">Has comments</option>
                     <option value="no">No comments</option>
                   </select>
-                </div>
+                </label>
 
-                <div className="filter-popover-actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <div className="asset-filter-actions">
                   <button
-                    className="btn btn--ghost sm"
+                    className="asset-filter-clear"
                     onClick={() => setAssetFilters({ status: "all", type: "all", hasComments: "all" })}
-                    style={{ padding: "4px 8px", fontSize: 12 }}
                   >
                     Clear
                   </button>
                   <button
-                    className="btn btn--primary sm"
+                    className="asset-filter-close"
                     onClick={() => setFilterOpen(false)}
-                    style={{ padding: "4px 12px", fontSize: 12 }}
                   >
                     Close
                   </button>
@@ -1078,6 +1111,28 @@ function ProjectMgmt() {
         <div className="section-title" style={{marginTop:0}}>
           <h2>Generated Files</h2>
           <span className="count">{assets.length} TOTAL</span>
+          {searchQuery && (
+            <span className="search-result-label" style={{ marginLeft: 16, fontSize: 13, color: "var(--ink-3)", display: "flex", alignItems: "center", gap: 8 }}>
+              Search: <strong>“{searchQuery}”</strong> · {filteredAssets.length} {filteredAssets.length === 1 ? "result" : "results"}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("bt:clear-global-search"));
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--accent, #3b82f6)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  padding: "0 4px",
+                  textDecoration: "underline"
+                }}
+              >
+                [Clear]
+              </button>
+            </span>
+          )}
           <span className="spacer" />
           <div className="segmented">
             <button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}>Grid</button>
@@ -1107,6 +1162,7 @@ function ProjectMgmt() {
               const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
               return (
                 <div
+                  id={`asset-card-${a.id}`}
                   className={`asset-card asset-card--clickable ${selectedAssetIds.has(a.id) ? 'asset-card--selected' : ''}`}
                   key={a.id || i}
                   onClick={() => handleOpenAsset(a)}
@@ -1388,6 +1444,7 @@ function AssetList({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
         const creatorInitials = creatorName.split(" ").map(s => s[0]).join("").slice(0,2);
         return (
           <div
+            id={`asset-card-${a.id}`}
             className={`asset-table__row ${isSelected ? "asset-table__row--selected" : ""}`}
             key={a.id || i}
             onClick={() => onSelect?.(a)}
@@ -1463,7 +1520,7 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
     const commentsCount = asset._count?.comments ?? asset.comments ?? 0;
     const creatorName = asset.creator?.name ?? "System";
     return (
-      <div className="asset-compare__col">
+      <div className="asset-compare__col" id={`asset-card-${asset.id}`}>
         <div className="asset-compare__col-head">
           <span style={{fontFamily:"var(--f-mono)", fontSize: 10.5, letterSpacing:"0.12em", color:"var(--ink-4)"}}>{side}</span>
           <span style={{fontFamily:"var(--f-mono)", fontSize: 12.5, color:"var(--ink)", flex: 1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{asset.name}</span>
