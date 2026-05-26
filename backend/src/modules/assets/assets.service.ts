@@ -759,52 +759,150 @@ export async function bulkDownloadAssets(assetIds: string[], userId: string) {
 
 export async function useAssetsWithAI(
   assetIds: string[],
-  input: { projectId: string; toolId: string; jobType: any; mode: 'single' | 'batch' },
-  userId: string
+  input: {
+    projectId: string;
+    toolId: string;
+    jobType: any;
+    mode: 'single' | 'batch';
+    params?: Record<string, unknown>;
+  },
+  userId: string,
 ) {
   if (!assetIds || assetIds.length === 0) throw Errors.BadRequest('No assets specified');
 
-  const assets = await prisma.asset.findMany({
-    where: { id: { in: assetIds } }
-  });
+  const assets = await prisma.asset.findMany({ where: { id: { in: assetIds } } });
   if (assets.length === 0) throw Errors.NotFound('No assets found');
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const isAdmin = user?.role === 'ADMIN';
 
-  for (const asset of assets) {
-    const member = await prisma.projectMember.findUnique({
-      where: { projectId_userId: { projectId: input.projectId, userId } }
-    });
-    if (!member && !isAdmin) throw Errors.Forbidden(`Access denied to project for asset ${asset.name}`);
+  const member = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId: input.projectId, userId } },
+  });
+  if (!member && !isAdmin) throw Errors.Forbidden('Access denied to project');
+
+  // Resolve toolId — accept either an AITool.id or AITool.slug
+  let resolvedToolId: string | undefined = input.toolId;
+  if (input.toolId) {
+    const byId = await prisma.aITool.findUnique({ where: { id: input.toolId } });
+    if (byId) {
+      resolvedToolId = byId.id;
+    } else {
+      const bySlug = await prisma.aITool.findUnique({ where: { slug: input.toolId } });
+      if (bySlug) resolvedToolId = bySlug.id;
+    }
   }
 
+  // ── IMAGE_UPSCALE (V0.6) ─────────────────────────────
+  // For V0.6 we process single mode first. Batch with >1 image is reduced to
+  // the first asset with a warning so the route still succeeds.
+  if (input.jobType === 'IMAGE_UPSCALE') {
+    const sourceAsset = assets[0];
+    let warning: string | undefined;
+    if (input.mode === 'batch' || assets.length > 1) {
+      warning = `IMAGE_UPSCALE V0.6 processes one asset at a time; using "${sourceAsset.name}". Other selections were ignored.`;
+    }
+
+    if (sourceAsset.projectId !== input.projectId) {
+      throw Errors.BadRequest(`Asset ${sourceAsset.name} does not belong to project ${input.projectId}`);
+    }
+    if (!sourceAsset.mimeType || !sourceAsset.mimeType.startsWith('image/')) {
+      throw Errors.BadRequest(`Asset ${sourceAsset.name} is not an image (mimeType=${sourceAsset.mimeType ?? 'unknown'})`);
+    }
+
+    const fileKey = (sourceAsset.metadata as any)?.fileKey || null;
+    let sourceFileUrl: string | null = sourceAsset.fileUrl ?? null;
+    if (fileKey) {
+      try {
+        sourceFileUrl = await storageService.createSignedDownload(fileKey);
+      } catch (err: any) {
+        console.warn(`[useAssetsWithAI] signed URL failed for ${fileKey}: ${err.message}. Falling back to asset.fileUrl.`);
+      }
+    }
+    if (!sourceFileUrl) {
+      throw Errors.BadRequest(`Asset ${sourceAsset.name} has no resolvable source URL`);
+    }
+
+    const p = input.params ?? {};
+    const normalizedParams = {
+      assetId: sourceAsset.id,
+      sourceAssetId: sourceAsset.id,
+      sourceFileKey: fileKey,
+      sourceFileUrl,
+      fileUrl: sourceFileUrl, // legacy alias for older provider impls
+      sourceMimeType: sourceAsset.mimeType,
+      scale: typeof p.scale === 'number' ? p.scale : 4,
+      faceEnhance: Boolean(p.faceEnhance),
+      detail: typeof p.detail === 'number' ? p.detail : 72,
+      denoise: typeof p.denoise === 'number' ? p.denoise : 45,
+      outputPolicy: 'NEW_VERSION_OF_SOURCE_ASSET',
+      providerPreference: Array.isArray(p.providerPreference) && p.providerPreference.length > 0
+        ? p.providerPreference
+        : ['dispatcher', 'comfyui', 'mock'],
+    };
+
+    const job = await createJob({
+      name: `Upscale ${sourceAsset.name}`,
+      type: input.jobType,
+      projectId: input.projectId,
+      toolId: resolvedToolId,
+      params: normalizedParams,
+    }, userId);
+
+    // Flip source asset to GENERATING so the UI reflects in-flight work.
+    try {
+      await prisma.asset.update({
+        where: { id: sourceAsset.id },
+        data: { status: AssetStatus.GENERATING },
+      });
+    } catch (err: any) {
+      console.warn(`[useAssetsWithAI] failed to set GENERATING status: ${err.message}`);
+    }
+
+    return {
+      mode: 'single' as const,
+      job,
+      sourceAsset: {
+        id: sourceAsset.id,
+        name: sourceAsset.name,
+        mimeType: sourceAsset.mimeType,
+        currentVersion: sourceAsset.currentVersion,
+      },
+      warning,
+    };
+  }
+
+  // ── Legacy path (other job types) ────────────────────
   if (input.mode === 'single' || assetIds.length === 1) {
     const asset = assets[0];
     const job = await createJob({
       name: `AI Action on ${asset.name}`,
       type: input.jobType,
       projectId: input.projectId,
-      toolId: input.toolId,
+      toolId: resolvedToolId,
       params: {
+        ...(input.params ?? {}),
         sourceAssetId: asset.id,
+        assetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
-      }
+      },
     }, userId);
-    return { mode: 'single', job };
+    return { mode: 'single' as const, job };
   } else {
     const batchInputs = assets.map(asset => ({
       name: `AI Action on ${asset.name}`,
       params: {
+        ...(input.params ?? {}),
         sourceAssetId: asset.id,
+        assetId: asset.id,
         fileKey: (asset.metadata as any)?.fileKey || null,
         fileUrl: asset.fileUrl,
-      }
+      },
     }));
 
-    const batch = await createBatch(input.projectId, input.toolId, batchInputs, userId);
-    return { mode: 'batch', batch };
+    const batch = await createBatch(input.projectId, resolvedToolId ?? input.toolId, batchInputs, userId);
+    return { mode: 'batch' as const, batch };
   }
 }
 

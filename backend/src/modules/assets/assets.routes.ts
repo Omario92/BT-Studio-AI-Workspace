@@ -266,7 +266,8 @@ export async function assetRoutes(fastify: FastifyInstance) {
           projectId: { type: 'string' },
           toolId: { type: 'string' },
           jobType: { type: 'string' },
-          mode: { type: 'string', enum: ['single', 'batch'] }
+          mode: { type: 'string', enum: ['single', 'batch'] },
+          params: { type: 'object', additionalProperties: true }
         }
       }
     }

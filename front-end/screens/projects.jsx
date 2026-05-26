@@ -441,18 +441,51 @@ function ProjectMgmt() {
     setBulkActionError(null);
     try {
       const selectedAssets = assets.filter(a => selectedAssetIds.has(a.id));
-      localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify({
-        projectId: currentProject.id,
-        assets: selectedAssets.map(a => ({
+
+      // V0.6: For Upscaler, require an image as the source.
+      if (toolId === "upscaler") {
+        const firstAsset = selectedAssets[0];
+        if (!firstAsset || !(firstAsset.mimeType || "").startsWith("image/")) {
+          alert("Image Upscaler only accepts image assets. Please select an image.");
+          setBulkActionBusy(false);
+          setAiActionMenuOpen(false);
+          return;
+        }
+      }
+
+      // Pre-resolve signed preview URL for assets that have a fileKey so the
+      // workbench can render the source image instantly.
+      const enriched = await Promise.all(selectedAssets.map(async (a) => {
+        const fileKey = a.metadata?.fileKey || null;
+        let previewUrl = null;
+        if (fileKey && typeof assetsApi !== "undefined") {
+          try { previewUrl = await assetsApi.getSignedUrl(fileKey); } catch (e) {}
+        }
+        return {
           id: a.id,
           name: a.name,
-          fileKey: a.metadata?.fileKey || null,
-          fileUrl: a.fileUrl || null,
           mimeType: a.mimeType,
-        })),
-        toolId,
-        jobType,
+          fileKey,
+          fileUrl: a.fileUrl || null,
+          previewUrl: previewUrl || resolveFileUrl(a.fileUrl) || null,
+          sourceFileUrl: previewUrl || resolveFileUrl(a.fileUrl) || null,
+          projectId: a.projectId || currentProject.id,
+          currentVersion: a.currentVersion ?? 1,
+        };
       }));
+
+      const ctx = {
+        version: "0.6",
+        source: "projects",
+        projectId: currentProject.id,
+        toolId,
+        jobType: jobType === "upscale" ? "IMAGE_UPSCALE" : jobType,
+        mode: "single",
+        selectedAssetIds: enriched.map(a => a.id),
+        assets: enriched,
+      };
+
+      localStorage.setItem("bt_selected_assets_for_ai", JSON.stringify(ctx));
       localStorage.setItem("bt_tool", toolId || "image-gen");
       localStorage.setItem("bt_screen", "workspace");
       window.location.reload();
@@ -605,6 +638,25 @@ function ProjectMgmt() {
       .catch(() => setOffline(true))
       .finally(() => setLoading(false));
   }, [currentProject, activeFolderId, hydrateAssetThumbnails]);
+
+  // V0.6: Focus an asset by id after returning from AI Workspace.
+  React.useEffect(() => {
+    if (!assets || assets.length === 0) return;
+    let focusId = null;
+    try { focusId = localStorage.getItem("bt_focus_asset"); } catch (e) {}
+    if (!focusId) return;
+    const target = assets.find(a => a.id === focusId);
+    if (!target) return;
+    try {
+      const el = document.querySelector(`[data-asset-id="${focusId}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (e) {}
+    handleOpenAsset(target);
+    try {
+      localStorage.removeItem("bt_focus_asset");
+      // bt_focus_version is read inside the modal; left as-is until AssetReviewModal mounts.
+    } catch (e) {}
+  }, [assets]);
 
   // Build the unified sidebar tree list dynamically
   const dynamicTree = React.useMemo(() => {
@@ -876,6 +928,7 @@ function ProjectMgmt() {
                 <div
                   className={`asset-card asset-card--clickable ${selectedAssetIds.has(a.id) ? 'asset-card--selected' : ''}`}
                   key={a.id || i}
+                  data-asset-id={a.id}
                   onClick={() => handleOpenAsset(a)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenAsset(a); } }}
                   tabIndex={0}
