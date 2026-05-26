@@ -1300,6 +1300,7 @@ function ProjectMgmt() {
             </div>
           </div>
         </div>
+      )}
       {/* ── Rename Asset Modal ── */}
       {renameModalOpen && (
         <div
