@@ -7,6 +7,43 @@ const resolveFileUrl = (url) => {
   return url;
 };
 
+function ControlSlider({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  suffix = "%",
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+
+  return (
+    <div className="slider-row">
+      <div className="slider-row__head">
+        {label}
+        <span className="v">{value}{suffix}</span>
+      </div>
+
+      <div className="slider-track">
+        <div className="fill" style={{ width: `${pct}%` }} />
+        <div className="thumb" style={{ left: `${pct}%` }} />
+
+        <input
+          className="slider-input"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label={label}
+        />
+      </div>
+    </div>
+  );
+}
+
 // Shared workbench header
 function WorkbenchHead({ tool, onBack, extra }) {
   return (
@@ -372,6 +409,65 @@ function UpscalerWorkbench({ tool, onBack }) {
   const [hasRehydrated, setHasRehydrated] = React.useState(false);
   const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
 
+  const [previewMode, setPreviewMode] = React.useState("compare"); // "compare" | "before" | "after"
+  const [comparePct, setComparePct] = React.useState(50);
+  const [isComparing, setIsComparing] = React.useState(false);
+
+  const compareRef = React.useRef(null);
+
+  const clampPercent = (value) => {
+    return Math.max(0, Math.min(100, value));
+  };
+
+  const getPercentFromPointerEvent = (event, element) => {
+    const rect = element.getBoundingClientRect();
+    const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+    if (clientX == null) return 50;
+    return clampPercent(((clientX - rect.left) / rect.width) * 100);
+  };
+
+  const updateCompareFromEvent = (event) => {
+    if (!compareRef.current) return;
+    const pct = getPercentFromPointerEvent(event, compareRef.current);
+    setComparePct(pct);
+  };
+
+  const handleComparePointerDown = (event) => {
+    event.preventDefault();
+    setIsComparing(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateCompareFromEvent(event);
+  };
+
+  const handleComparePointerMove = (event) => {
+    if (!isComparing) return;
+    updateCompareFromEvent(event);
+  };
+
+  const handleComparePointerUp = (event) => {
+    setIsComparing(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  const handleCompareKeyDown = (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setComparePct(v => clampPercent(v - 2));
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setComparePct(v => clampPercent(v + 2));
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setComparePct(0);
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setComparePct(100);
+    }
+  };
+
   const handlePickSource = (source) => {
     setSourceAsset(source);
     setSourcePreviewError(false);
@@ -674,33 +770,17 @@ function UpscalerWorkbench({ tool, onBack }) {
               </div>
             </div>
 
-            <div className="slider-row">
-              <div className="slider-row__head">
-                Detail enhancement
-                <span className="v">{detail}%</span>
-              </div>
-              <div className="slider-track" onClick={e => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setDetail(Math.round(((e.clientX - r.left) / r.width) * 100));
-              }}>
-                <div className="fill" style={{width: detail + "%"}}/>
-                <div className="thumb" style={{left: detail + "%"}}/>
-              </div>
-            </div>
+            <ControlSlider
+              label="Detail enhancement"
+              value={detail}
+              onChange={setDetail}
+            />
 
-            <div className="slider-row">
-              <div className="slider-row__head">
-                Denoise
-                <span className="v">{denoise}%</span>
-              </div>
-              <div className="slider-track" onClick={e => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setDenoise(Math.round(((e.clientX - r.left) / r.width) * 100));
-              }}>
-                <div className="fill" style={{width: denoise + "%"}}/>
-                <div className="thumb" style={{left: denoise + "%"}}/>
-              </div>
-            </div>
+            <ControlSlider
+              label="Denoise"
+              value={denoise}
+              onChange={setDenoise}
+            />
 
             <div className="aiw__consist" style={{marginTop: 6}}>
               <span style={{color:"var(--ink-on-dark)"}}>{I.face}</span>
@@ -761,24 +841,40 @@ function UpscalerWorkbench({ tool, onBack }) {
             )}
             <span style={{flex: 1}} />
             <div className="segmented">
-              <button className="active">Compare</button>
-              <button>Before</button>
-              <button>After</button>
+              <button type="button" className={previewMode === "compare" ? "active" : ""} onClick={() => setPreviewMode("compare")}>Compare</button>
+              <button type="button" className={previewMode === "before" ? "active" : ""} onClick={() => setPreviewMode("before")}>Before</button>
+              <button type="button" className={previewMode === "after" ? "active" : ""} onClick={() => setPreviewMode("after")}>After</button>
             </div>
           </header>
           <div className="up-canvas__stage">
-            <div className="compare">
-              <div className="before" style={{position: "relative", overflow: "hidden"}}>
+            <div
+              ref={compareRef}
+              className={`compare compare--${previewMode}`}
+              onPointerDown={previewMode === "compare" ? handleComparePointerDown : undefined}
+              onPointerMove={previewMode === "compare" ? handleComparePointerMove : undefined}
+              onPointerUp={previewMode === "compare" ? handleComparePointerUp : undefined}
+              onPointerCancel={previewMode === "compare" ? handleComparePointerUp : undefined}
+            >
+              <div className="compare__layer compare__layer--before">
                 {(getSourcePreviewUrl(sourceAsset) && !sourcePreviewError) ? (
-                  <img src={getSourcePreviewUrl(sourceAsset)} alt={sourceAsset.name || "Source Asset"} style={{width: "100%", height: "100%", objectFit: "contain"}} onError={() => setSourcePreviewError(true)} />
+                  <img src={getSourcePreviewUrl(sourceAsset)} alt={sourceAsset.name || "Source Asset"} style={{width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", userSelect: "none"}} draggable={false} onError={() => setSourcePreviewError(true)} />
                 ) : (
                   <Placeholder tone="violet" label={sourceAsset ? "NO PREVIEW" : ""} />
                 )}
-                <span className="compare__tag" style={{left: 12}}>BEFORE · {sourceAsset?.name || "no source"}</span>
+                <span className="compare__tag compare__tag--before">BEFORE · {sourceAsset?.name || "no source"}</span>
               </div>
-              <div className="after" style={{position: "relative", overflow: "hidden"}}>
+
+              <div
+                className="compare__layer compare__layer--after"
+                style={{
+                  clipPath: previewMode === "compare"
+                    ? `inset(0 ${100 - comparePct}% 0 0)`
+                    : "none",
+                  opacity: previewMode === "before" ? 0 : 1
+                }}
+              >
                 {outputResult?.displayUrl ? (
-                  <img src={outputResult.displayUrl} alt="Upscaled output" style={{width: "100%", height: "100%", objectFit: "contain"}} />
+                  <img src={outputResult.displayUrl} alt="Upscaled output" style={{width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", userSelect: "none"}} draggable={false} />
                 ) : isGenerating ? (
                   <div style={{position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(13,15,18,0.85)", gap: 10}}>
                     <span className="dot-status dot-status--generating" style={{width: 10, height: 10}} />
@@ -795,9 +891,39 @@ function UpscalerWorkbench({ tool, onBack }) {
                 ) : (
                   <Placeholder tone="violet" label="" />
                 )}
-                <span className="compare__tag" style={{right: 12}}>AFTER · {factor === "2x" ? "2048" : factor === "4x" ? "4096" : "8192"}px</span>
+                <span className="compare__tag compare__tag--after">AFTER · {factor === "2x" ? "2048" : factor === "4x" ? "4096" : "8192"}px</span>
               </div>
-              <div className="compare__handle"/>
+
+              {previewMode === "compare" && (
+                <button
+                  type="button"
+                  className="compare__handle"
+                  style={{ left: `${comparePct}%` }}
+                  aria-label="Before after comparison slider"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={Math.round(comparePct)}
+                  role="slider"
+                  tabIndex={0}
+                  onKeyDown={handleCompareKeyDown}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsComparing(true);
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isComparing) return;
+                    e.stopPropagation();
+                    updateCompareFromEvent(e);
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    setIsComparing(false);
+                    e.currentTarget.releasePointerCapture?.(e.pointerId);
+                  }}
+                />
+              )}
             </div>
           </div>
           <div className="up-canvas__foot">
