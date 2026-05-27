@@ -5106,7 +5106,16 @@ function ProjectMgmt({ searchQuery = "" }) {
   }
 
   const handleUseWithAI = async (toolId, jobType) => {
-    if (selectedAssetIds.size === 0) return;
+    // If no assets are selected, open workspace with current project context only
+    if (selectedAssetIds.size === 0) {
+      localStorage.setItem("bt_tool", toolId || "upscaler");
+      localStorage.setItem("bt_screen", "workspace");
+      if (currentProject?.id) {
+        localStorage.setItem("bt_active_proj", currentProject.id);
+      }
+      window.location.reload();
+      return;
+    }
     setBulkActionBusy(true);
     setBulkActionError(null);
     try {
@@ -7544,8 +7553,18 @@ function UpscalerWorkbench({ tool, onBack }) {
   }, [sourceAsset?.id, sourcePreviewError, hasRehydrated]);
 
   const clearSource = () => {
-    localStorage.removeItem("bt_selected_assets_for_ai");
+    try { localStorage.removeItem("bt_selected_assets_for_ai"); } catch (e) {}
     setSourceAsset(null);
+    setSourcePreviewError(false);
+    setHasRehydrated(false);
+    setJobStatus("idle");
+    setJobId(null);
+    setJobProgress(0);
+    setJobError(null);
+    setResultUrl(null);
+    setResultAssetId(null);
+    setComparePct(50);
+    setPreviewMode("compare");
   };
 
   // ─── Job state machine ──────────────────────────

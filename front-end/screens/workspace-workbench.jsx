@@ -605,9 +605,13 @@ function UpscalerWorkbench({ tool, onBack }) {
   const clearSource = () => {
     try { localStorage.removeItem("bt_selected_assets_for_ai"); } catch (e) {}
     setSourceAsset(null);
+    setSourcePreviewError(false);
+    setHasRehydrated(false);
     setOutputResult(null);
     setCurrentJob(null);
     setProgress(0);
+    setComparePct(50);
+    setPreviewMode("compare");
   };
 
   const isGenerating = currentJob && (currentJob.status === "QUEUED" || currentJob.status === "RUNNING");
