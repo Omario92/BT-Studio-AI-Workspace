@@ -570,6 +570,26 @@ input, textarea { outline: none; }
   padding: 3px;
   gap: 2px;
 }
+/* Full-width segmented inside filter panels */
+.filter-group .segmented {
+  display: flex !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.filter-group .segmented button {
+  flex: 1 !important;
+  min-width: 0;
+  text-align: center;
+  padding: 5px 4px !important;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filter-group {
+  width: 100%;
+  box-sizing: border-box;
+}
 .segmented--dark { background: var(--bg-input-dark); }
 .segmented button {
   padding: 6px 14px;
@@ -3549,10 +3569,10 @@ input, textarea { outline: none; }
 .move-copy-modal__card {
   width: 100%;
   max-width: 440px;
-  background: #1c1f24;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--sh-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3560,7 +3580,7 @@ input, textarea { outline: none; }
 
 .move-copy-modal__head {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3570,7 +3590,7 @@ input, textarea { outline: none; }
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #FFFFFF;
+  color: var(--ink);
 }
 
 .move-copy-modal__body {
@@ -3588,15 +3608,15 @@ input, textarea { outline: none; }
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ink-2);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .folder-tree-picker__item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #FFFFFF;
+  background: var(--bg-canvas-2);
+  color: var(--ink);
 }
 
 .folder-tree-picker__item--selected {
@@ -3607,11 +3627,11 @@ input, textarea { outline: none; }
 
 .move-copy-modal__foot {
   padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--line);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  background: #171a1e;
+  background: var(--bg-canvas-2);
 }
 
 /* ============================================
@@ -3716,11 +3736,24 @@ input, textarea { outline: none; }
 }
 
 .source-picker__head {
-  padding: 18px 20px;
+  padding: 18px 56px 18px 20px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: flex-start;
   gap: 16px;
+  position: relative;
+}
+
+.source-picker__close {
+  position: absolute !important;
+  top: 14px;
+  right: 16px;
+  width: 34px !important;
+  height: 34px !important;
+  font-size: 20px !important;
+  line-height: 1;
+  display: grid;
+  place-items: center;
 }
 
 .source-picker__head h3 {

@@ -17,6 +17,17 @@ function Login({ onLogin }) {
       const data = await apiClient.auth.login(email, pwd);
       onLogin(data.user);
     } catch (err) {
+      if (err.offline) {
+        // Backend offline — fall back to mock user so preview still works
+        onLogin({
+          id: 'usr_alice',
+          name: 'Alice Chen',
+          email: email || 'alice@btstudio.ai',
+          role: 'ADMIN',
+          avatarUrl: null,
+        });
+        return;
+      }
       setErrorMsg(err.message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);

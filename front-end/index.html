@@ -581,6 +581,26 @@ input, textarea { outline: none; }
   padding: 3px;
   gap: 2px;
 }
+/* Full-width segmented inside filter panels */
+.filter-group .segmented {
+  display: flex !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.filter-group .segmented button {
+  flex: 1 !important;
+  min-width: 0;
+  text-align: center;
+  padding: 5px 4px !important;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filter-group {
+  width: 100%;
+  box-sizing: border-box;
+}
 .segmented--dark { background: var(--bg-input-dark); }
 .segmented button {
   padding: 6px 14px;
@@ -1060,6 +1080,85 @@ input, textarea { outline: none; }
   font-size: 10.5px;
   color: var(--ink-4);
   margin-left: auto;
+}
+
+/* ============================================
+   Tree Create Menu Dropdown
+   ============================================ */
+.tree-create-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.tree-create-menu__popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: 240px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-card, #fff);
+  box-shadow: 0 18px 45px rgba(13, 15, 18, 0.18), 0 2px 8px rgba(13, 15, 18, 0.08);
+}
+
+/* Ensure popover uses theme-aware dark background if inside dark sidebar */
+.pm__tree .tree-create-menu__popover {
+  background: var(--bg-card, #171a1e);
+  border-color: var(--line, rgba(255, 255, 255, 0.08));
+}
+
+.tree-create-menu__item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.tree-create-menu__item:hover {
+  background: var(--bg-hover, rgba(59, 130, 246, 0.08));
+}
+
+.tree-create-menu__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tree-create-menu__icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.tree-create-menu__item strong {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.pm__tree .tree-create-menu__item strong {
+  color: #ffffff;
+}
+
+.tree-create-menu__item small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--ink-4);
 }
 
 .pm__main { overflow: auto; padding: 28px 32px 40px; }
@@ -3462,10 +3561,10 @@ input, textarea { outline: none; }
 .move-copy-modal__card {
   width: 100%;
   max-width: 440px;
-  background: #1c1f24;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--sh-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3473,7 +3572,7 @@ input, textarea { outline: none; }
 
 .move-copy-modal__head {
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3483,7 +3582,7 @@ input, textarea { outline: none; }
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #FFFFFF;
+  color: var(--ink);
 }
 
 .move-copy-modal__body {
@@ -3501,15 +3600,15 @@ input, textarea { outline: none; }
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ink-2);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .folder-tree-picker__item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #FFFFFF;
+  background: var(--bg-canvas-2);
+  color: var(--ink);
 }
 
 .folder-tree-picker__item--selected {
@@ -3520,13 +3619,179 @@ input, textarea { outline: none; }
 
 .move-copy-modal__foot {
   padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--line);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  background: #171a1e;
+  background: var(--bg-canvas-2);
 }
 
+/* ============================================
+   Projects Source Picker Modal
+   ============================================ */
+.source-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(13, 15, 18, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.source-picker__card {
+  width: min(920px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 48px));
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(13, 15, 18, 0.24);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.source-picker__head {
+  padding: 18px 56px 18px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  position: relative;
+}
+
+.source-picker__close {
+  position: absolute !important;
+  top: 14px;
+  right: 16px;
+  width: 34px !important;
+  height: 34px !important;
+  font-size: 20px !important;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.source-picker__head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.source-picker__head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+.source-picker__toolbar {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+}
+
+.source-picker__error {
+  margin: 12px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.06);
+  color: var(--st-failed);
+  font-size: 12px;
+}
+
+.source-picker__body {
+  padding: 18px 20px 20px;
+  overflow: auto;
+}
+
+.source-picker__empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--ink-4);
+  font-size: 13px;
+}
+
+.source-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.source-picker__asset {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-card, #fff);
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.source-picker__asset:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: 0 10px 24px rgba(13, 15, 18, 0.10);
+}
+
+.source-picker__asset:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.source-picker__thumb {
+  aspect-ratio: 16 / 10;
+  background: var(--bg-canvas-2);
+  overflow: hidden;
+}
+
+.source-picker__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.source-picker__meta {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.source-picker__meta strong {
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-picker__meta small {
+  font-size: 10.5px;
+  color: var(--ink-4);
+  font-family: var(--f-mono);
+}
+
+.source-picker__selecting {
+  display: block;
+  padding: 0 10px 10px;
+  color: var(--accent);
+  font-size: 11px;
+  font-family: var(--f-mono);
+}
+
+@media (max-width: 720px) {
+  .source-picker__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .source-picker__grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+}
 
 </style>
 </head>
@@ -3930,6 +4195,17 @@ function Login({ onLogin }) {
       const data = await apiClient.auth.login(email, pwd);
       onLogin(data.user);
     } catch (err) {
+      if (err.offline) {
+        // Backend offline — fall back to mock user so preview still works
+        onLogin({
+          id: 'usr_alice',
+          name: 'Alice Chen',
+          email: email || 'alice@btstudio.ai',
+          role: 'ADMIN',
+          avatarUrl: null,
+        });
+        return;
+      }
       setErrorMsg(err.message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);
@@ -4429,6 +4705,7 @@ function ProjectMgmt({ searchQuery = "" }) {
   // Create menu and new project states
   const [createMenuOpen, setCreateMenuOpen] = React.useState(false);
   const createMenuRef = React.useRef(null);
+  const [menuPos, setMenuPos] = React.useState(null);
 
   const [projectModalOpen, setProjectModalOpen] = React.useState(false);
   const [newProjectName, setNewProjectName] = React.useState('');
@@ -4468,9 +4745,13 @@ function ProjectMgmt({ searchQuery = "" }) {
 
   React.useEffect(() => {
     const clickOutside = (e) => {
-      if (createMenuRef.current && !createMenuRef.current.contains(e.target)) {
-        setCreateMenuOpen(false);
+      if (createMenuRef.current && createMenuRef.current.contains(e.target)) {
+        return;
       }
+      if (e.target.closest && e.target.closest('.tree-create-menu__popover')) {
+        return;
+      }
+      setCreateMenuOpen(false);
     };
     document.addEventListener('mousedown', clickOutside);
     return () => document.removeEventListener('mousedown', clickOutside);
@@ -4482,6 +4763,8 @@ function ProjectMgmt({ searchQuery = "" }) {
 
   const handleOpenCreateMenu = (e) => {
     e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
     setCreateMenuOpen(v => !v);
   };
 
@@ -5352,8 +5635,11 @@ function ProjectMgmt({ searchQuery = "" }) {
               {I.plus}
             </button>
 
-            {createMenuOpen && (
-              <div className="tree-create-menu__popover">
+            {createMenuOpen && menuPos && ReactDOM.createPortal(
+              <div
+                className="tree-create-menu__popover tree-create-menu__popover--fixed"
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+              >
                 <button
                   type="button"
                   className="tree-create-menu__item"
@@ -5379,7 +5665,8 @@ function ProjectMgmt({ searchQuery = "" }) {
                     <small>Add folder to current project</small>
                   </span>
                 </button>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
           <button
@@ -5732,16 +6019,16 @@ function ProjectMgmt({ searchQuery = "" }) {
           onClick={() => setFolderModalOpen(false)}>
           <div
             style={{
-              background: '#FFFFFF',
+              background: 'var(--bg-card)',
               border: '1px solid var(--line)',
               borderRadius: 12,
               padding: '24px 24px 20px',
               width: 380,
               display: 'flex', flexDirection: 'column', gap: 14,
-              boxShadow: '0 20px 50px rgba(13,15,18,0.20), 0 2px 6px rgba(13,15,18,0.06)',
+              boxShadow: 'var(--sh-lg)',
             }}
             onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New Folder</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>New Folder</h3>
             <input
               autoFocus
               type="text"
@@ -6267,10 +6554,11 @@ function AssetReviewModal({
       onClick={onClose}>
       <div
         style={{
-          background: '#FFFFFF', border: '1px solid var(--line)',
+          background: 'var(--bg-card)', border: '1px solid var(--line)',
           borderRadius: 14, width: '100%', maxWidth: 1180, maxHeight: '92vh',
           display: 'grid', gridTemplateColumns: '1fr 360px',
-          overflow: 'hidden', boxShadow: '0 20px 60px rgba(13,15,18,0.30)',
+          overflow: 'hidden', boxShadow: 'var(--sh-lg)',
+          color: 'var(--ink)',
         }}
         onClick={(e) => e.stopPropagation()}>
 
@@ -6939,7 +7227,7 @@ function ProjectAssetPickerModal({
             <h3>{title}</h3>
             <p>Select an image asset from an existing project.</p>
           </div>
-          <button className="icon-btn icon-btn--light" onClick={onClose}>×</button>
+          <button className="icon-btn icon-btn--light source-picker__close" onClick={onClose}>×</button>
         </div>
 
         <div className="source-picker__toolbar">
@@ -8952,9 +9240,9 @@ const TIMELINE = [
   { t: "08:32 AM", u: "Sarah M.",    i: "SM", c: "c", act: "started review on", obj: "Storyboard Act 02", proj: "Halida Fresh Beer", icon: "default" },
 ];
 
-function FilterGroup({ title, items, mode = "check" }) {
+// Controlled FilterGroup — accepts selected + onChange from parent
+function FilterGroup({ title, items, selected = {}, onChange }) {
   const [open, setOpen] = React.useState(true);
-  const [selected, setSelected] = React.useState({});
   return (
     <div className="filter-group">
       <h4 className="filter-group__title">
@@ -8968,18 +9256,18 @@ function FilterGroup({ title, items, mode = "check" }) {
         return (
           <button key={it.k}
             className={`filter-item ${on ? "on" : ""}`}
-            onClick={() => setSelected({...selected, [it.k]: !on})}>
-            <span className={`checkbox__box ${on ? "" : ""}`} style={{
-              background: on ? "var(--accent)" : "#fff",
+            onClick={() => onChange({ ...selected, [it.k]: !on })}>
+            <span style={{
+              background: on ? "var(--accent)" : "transparent",
               borderColor: on ? "var(--accent)" : "var(--line-strong)",
               borderWidth: 1.5, borderStyle: "solid", borderRadius: 4,
-              width:14, height:14, display:"grid", placeItems:"center"
+              width: 14, height: 14, display: "grid", placeItems: "center", flexShrink: 0,
             }}>
               {on ? <span style={{
-                width:6, height:3,
-                borderLeft:"1.5px solid #fff", borderBottom:"1.5px solid #fff",
-                transform:"rotate(-45deg)", marginTop:-1
-              }}/> : null}
+                width: 6, height: 3,
+                borderLeft: "1.5px solid #fff", borderBottom: "1.5px solid #fff",
+                transform: "rotate(-45deg)", marginTop: -1,
+              }} /> : null}
             </span>
             <span>{it.l}</span>
             <span className="filter-count">{it.c}</span>
@@ -8993,13 +9281,98 @@ function FilterGroup({ title, items, mode = "check" }) {
 function ActivityLog() {
   const [timeline, setTimeline] = React.useState(TIMELINE);
 
+  // Pending filter state (committed on Apply)
+  const [pendingUsers,    setPendingUsers]    = React.useState({});
+  const [pendingProjects, setPendingProjects] = React.useState({});
+  const [pendingActions,  setPendingActions]  = React.useState({});
+  const [pendingDate,     setPendingDate]     = React.useState("24h");
+  const [pendingSearch,   setPendingSearch]   = React.useState("");
+  const [customFrom,      setCustomFrom]      = React.useState("");
+  const [customTo,        setCustomTo]        = React.useState("");
+
+  // Applied filter state (updated when Apply clicked)
+  const [appliedUsers,    setAppliedUsers]    = React.useState({});
+  const [appliedProjects, setAppliedProjects] = React.useState({});
+  const [appliedActions,  setAppliedActions]  = React.useState({});
+  const [appliedDate,     setAppliedDate]     = React.useState("24h");
+  const [appliedSearch,   setAppliedSearch]   = React.useState("");
+
+  const [applyFlash, setApplyFlash] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState("timeline");
+
+  const DATE_LIMITS = { "24h": 1, "7d": 7, "30d": 30, "custom": Infinity };
+
+  // Count active filters for badge
+  const activeCount = Object.values(appliedUsers).filter(Boolean).length
+    + Object.values(appliedProjects).filter(Boolean).length
+    + Object.values(appliedActions).filter(Boolean).length
+    + (appliedDate !== "24h" ? 1 : 0)
+    + (appliedSearch ? 1 : 0);
+
+  const filteredTimeline = React.useMemo(() => {
+    const days = DATE_LIMITS[appliedDate] ?? 1;
+    return timeline.filter(e => {
+      // Date filter
+      if (appliedDate !== "custom" && (e.daysAgo ?? 0) >= days) return false;
+
+      // User filter
+      const selUsers = Object.keys(appliedUsers).filter(k => appliedUsers[k]);
+      if (selUsers.length > 0) {
+        const match = selUsers.some(k => e.u === USER_MAP[k]);
+        if (!match) return false;
+      }
+
+      // Project filter
+      const selProjs = Object.keys(appliedProjects).filter(k => appliedProjects[k]);
+      if (selProjs.length > 0) {
+        const match = selProjs.some(k => e.proj === PROJ_MAP[k]);
+        if (!match) return false;
+      }
+
+      // Action filter
+      const selActs = Object.keys(appliedActions).filter(k => appliedActions[k]);
+      if (selActs.length > 0) {
+        const match = selActs.some(k => e.act.toLowerCase().includes(ACTION_MAP[k]));
+        if (!match) return false;
+      }
+
+      // Search filter
+      if (appliedSearch) {
+        const q = appliedSearch.toLowerCase();
+        const haystack = `${e.u} ${e.act} ${e.obj} ${e.proj} ${e.comment ?? ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [timeline, appliedUsers, appliedProjects, appliedActions, appliedDate, appliedSearch]);
+
+  const handleApply = () => {
+    setAppliedUsers(pendingUsers);
+    setAppliedProjects(pendingProjects);
+    setAppliedActions(pendingActions);
+    setAppliedDate(pendingDate);
+    setAppliedSearch(pendingSearch);
+    setApplyFlash(true);
+    setTimeout(() => setApplyFlash(false), 800);
+  };
+
+  const handleClearAll = () => {
+    setPendingUsers({});   setAppliedUsers({});
+    setPendingProjects({}); setAppliedProjects({});
+    setPendingActions({});  setAppliedActions({});
+    setPendingDate("24h");  setAppliedDate("24h");
+    setPendingSearch("");   setAppliedSearch("");
+    setCustomFrom(""); setCustomTo("");
+  };
+
   React.useEffect(() => {
     if (typeof activityApi === "undefined") return;
     activityApi.getActivity({ limit: 30 }).then(({ data }) => {
       if (!data || !data.length) return;
-      // Map API entries to the shape the render expects
       const mapped = data.map(entry => ({
         t: new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        daysAgo: Math.floor((Date.now() - new Date(entry.createdAt)) / 86400000),
         u: entry.user?.name ?? "Unknown",
         i: (entry.user?.name ?? "?").split(" ").map(s => s[0]).join("").slice(0, 2),
         c: "a",
@@ -9022,31 +9395,57 @@ function ActivityLog() {
       <aside className="activity__filters">
         <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:18}}>
           <h2 style={{fontSize:15, margin:0}}>Filters</h2>
+          {activeCount > 0 && (
+            <span style={{
+              background:"var(--accent)", color:"#fff",
+              fontSize:10, fontWeight:600, borderRadius:999,
+              padding:"1px 6px", lineHeight:"16px",
+            }}>{activeCount}</span>
+          )}
           <span style={{flex:1}} />
-          <button className="btn btn--ghost" style={{padding:"4px 8px", fontSize:11}}>Reset</button>
+          <button className="btn btn--ghost" style={{padding:"4px 8px", fontSize:11}} onClick={handleClearAll}>Reset</button>
         </div>
 
         <div className="field" style={{marginBottom:18}}>
-          <input className="input" placeholder="Search activity…" />
+          <input
+            className="input"
+            placeholder="Search activity…"
+            value={pendingSearch}
+            onChange={e => setPendingSearch(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleApply()}
+          />
         </div>
 
-        <FilterGroup title="Users"    items={ACT_USERS}    />
-        <FilterGroup title="Projects" items={ACT_PROJECTS} />
-        <FilterGroup title="Action type" items={ACT_ACTIONS} />
+        <FilterGroup title="Users"       items={ACT_USERS}    selected={pendingUsers}    onChange={setPendingUsers}    />
+        <FilterGroup title="Projects"    items={ACT_PROJECTS} selected={pendingProjects} onChange={setPendingProjects} />
+        <FilterGroup title="Action type" items={ACT_ACTIONS}  selected={pendingActions}  onChange={setPendingActions}  />
 
         <div className="filter-group">
           <h4 className="filter-group__title">Date range</h4>
           <div className="segmented" style={{width:"100%"}}>
-            <button className="active" style={{flex:1}}>24h</button>
-            <button style={{flex:1}}>7d</button>
-            <button style={{flex:1}}>30d</button>
-            <button style={{flex:1}}>Custom</button>
+            {["24h","7d","30d","Custom"].map(r => (
+              <button
+                key={r}
+                className={pendingDate === r.toLowerCase() ? "active" : ""}
+                onClick={() => setPendingDate(r.toLowerCase())}
+              >{r}</button>
+            ))}
           </div>
+          {pendingDate === "custom" && (
+            <div style={{display:"flex", flexDirection:"column", gap:6, marginTop:8}}>
+              <input className="input" type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{fontSize:12}} />
+              <input className="input" type="date" value={customTo}   onChange={e => setCustomTo(e.target.value)}   style={{fontSize:12}} />
+            </div>
+          )}
         </div>
 
         <div style={{display:"flex", gap:8, marginTop:14}}>
-          <button className="btn btn--ghost" style={{flex:1}}>Clear all</button>
-          <button className="btn btn--primary" style={{flex:1}}>Apply</button>
+          <button className="btn btn--ghost" style={{flex:1}} onClick={handleClearAll}>Clear all</button>
+          <button
+            className="btn btn--primary"
+            style={{flex:1, transition:"opacity 150ms", opacity: applyFlash ? 0.6 : 1}}
+            onClick={handleApply}
+          >{applyFlash ? "Applied ✓" : "Apply"}</button>
         </div>
       </aside>
 
@@ -9058,51 +9457,109 @@ function ActivityLog() {
           </div>
           <div style={{flex:1}} />
           <div className="segmented">
-            <button className="active">Timeline</button>
-            <button>Table</button>
+            {["timeline","table"].map(m => (
+              <button key={m} className={viewMode === m ? "active" : ""} onClick={() => setViewMode(m)}>
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
           </div>
           <button className="btn btn--secondary">{I.download}<span>Export CSV</span></button>
         </div>
-        <p className="page-sub">{timeline.length} events · last 24 hours · all team members, all projects</p>
+        <p className="page-sub">
+          {filteredTimeline.length} event{filteredTimeline.length !== 1 ? "s" : ""} · {appliedDate === "custom" ? "custom range" : `last ${appliedDate}`}
+          {activeCount > 0 ? ` · ${activeCount} filter${activeCount > 1 ? "s" : ""} active` : " · all team members, all projects"}
+        </p>
 
-        {/* day separator */}
         <div style={{
           display:"flex", alignItems:"center", gap:10, margin:"10px 0 8px",
           fontFamily:"var(--f-mono)", fontSize:11, color:"var(--ink-4)", letterSpacing:"0.10em"
         }}>
-          <span>TODAY · {new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }).toUpperCase()}</span>
+          <span>TODAY · OCT 24, 2024</span>
           <div style={{flex:1, height:1, background:"var(--line-2)"}}/>
         </div>
 
-        <div className="timeline-list">
-          {timeline.map((e, i) => (
-            <div className="tl-item" key={i}>
-              <span className={`tl-dot tl-dot--${e.icon === "approved" || e.icon === "green" ? "green" :
-                                                  e.icon === "amber" ? "amber" :
-                                                  e.icon === "red" ? "red" : ""}`} />
-              <div className="tl-head">
-                <span className="tl-time">{e.t}</span>
-                <div className={`avatar avatar--${e.c} sm`}>{e.i}</div>
-                <span className="tl-user">{e.u}</span>
-                <span className="tl-action">{e.act} <b>{e.obj}</b> · <span style={{color:"var(--ink-4)", fontFamily:"var(--f-mono)", fontSize:11, letterSpacing:"0.06em"}}>{e.proj}</span></span>
-                {e.chip ? <span className={e.chip.cls} style={{marginLeft:"auto"}}>{e.chip.text}</span> : null}
-              </div>
-              {(e.attach || e.comment) ? (
-                <div className="tl-body">
-                  {e.attach ? (
-                    <div className="tl-thumb"><Placeholder tone={e.attach.tone} label={e.attach.label} style={{height:"100%"}} /></div>
-                  ) : null}
-                  {e.comment ? (
-                    <div className="tl-comment">
-                      <span style={{display:"inline-flex", color:"var(--ink-4)", marginRight:6, verticalAlign:"middle"}}>{I.comment}</span>
-                      {e.comment}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+        {filteredTimeline.length === 0 ? (
+          <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-4)", fontSize:13}}>
+            No events match the current filters.
+            <div style={{marginTop:10}}>
+              <button className="btn btn--ghost" onClick={handleClearAll}>Clear filters</button>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : viewMode === "timeline" ? (
+          <div className="timeline-list">
+            {filteredTimeline.map((e, i) => (
+              <div className="tl-item" key={i}>
+                <span className={`tl-dot tl-dot--${e.icon === "approved" || e.icon === "green" ? "green" :
+                                                    e.icon === "amber" ? "amber" :
+                                                    e.icon === "red" ? "red" : ""}`} />
+                <div className="tl-head">
+                  <span className="tl-time">{e.t}</span>
+                  <div className={`avatar avatar--${e.c} sm`}>{e.i}</div>
+                  <span className="tl-user">{e.u}</span>
+                  <span className="tl-action">{e.act} <b>{e.obj}</b> · <span style={{color:"var(--ink-4)", fontFamily:"var(--f-mono)", fontSize:11, letterSpacing:"0.06em"}}>{e.proj}</span></span>
+                  {e.chip ? <span className={e.chip.cls} style={{marginLeft:"auto"}}>{e.chip.text}</span> : null}
+                </div>
+                {(e.attach || e.comment) ? (
+                  <div className="tl-body">
+                    {e.attach ? (
+                      <div className="tl-thumb"><Placeholder tone={e.attach.tone} label={e.attach.label} style={{height:"100%"}} /></div>
+                    ) : null}
+                    {e.comment ? (
+                      <div className="tl-comment">
+                        <span style={{display:"inline-flex", color:"var(--ink-4)", marginRight:6, verticalAlign:"middle"}}>{I.comment}</span>
+                        {e.comment}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
+            <thead>
+              <tr style={{fontFamily:"var(--f-mono)", fontSize:10.5, color:"var(--ink-4)", letterSpacing:"0.08em", borderBottom:"1px solid var(--line)"}}>
+                <th style={{padding:"8px 12px 8px 0", fontWeight:500, textAlign:"left"}}>TIME</th>
+                <th style={{padding:"8px 12px", fontWeight:500, textAlign:"left"}}>USER</th>
+                <th style={{padding:"8px 12px", fontWeight:500, textAlign:"left"}}>ACTION</th>
+                <th style={{padding:"8px 12px", fontWeight:500, textAlign:"left"}}>ASSET</th>
+                <th style={{padding:"8px 12px", fontWeight:500, textAlign:"left"}}>PROJECT</th>
+                <th style={{padding:"8px 12px", fontWeight:500, textAlign:"left"}}>STATUS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTimeline.map((e, i) => (
+                <tr key={i} style={{borderBottom:"1px solid var(--line-2)", transition:"background 120ms"}}
+                  onMouseEnter={ev => ev.currentTarget.style.background="var(--bg-hover)"}
+                  onMouseLeave={ev => ev.currentTarget.style.background=""}>
+                  <td style={{padding:"10px 12px 10px 0", fontFamily:"var(--f-mono)", fontSize:11, color:"var(--ink-4)", whiteSpace:"nowrap"}}>{e.t}{e.daysAgo > 0 ? <span style={{marginLeft:4, opacity:0.6}}>-{e.daysAgo}d</span> : null}</td>
+                  <td style={{padding:"10px 12px"}}>
+                    <div style={{display:"flex", alignItems:"center", gap:7}}>
+                      <div className={`avatar avatar--${e.c} sm`}>{e.i}</div>
+                      <span style={{fontWeight:500}}>{e.u}</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"10px 12px"}}>
+                    <span className={`chip ${
+                      e.icon==="green" ? "chip--approved" :
+                      e.icon==="red"   ? "chip--rejected" :
+                      e.icon==="amber" ? "chip--wip" : "chip--draft"
+                    }`} style={{textTransform:"capitalize"}}>{e.act}</span>
+                  </td>
+                  <td style={{padding:"10px 12px", maxWidth:200}}>
+                    <span style={{fontFamily:"var(--f-mono)", fontSize:11, color:"var(--ink-2)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", display:"block"}}>{e.obj}</span>
+                  </td>
+                  <td style={{padding:"10px 12px", color:"var(--ink-3)", fontSize:12}}>{e.proj}</td>
+                  <td style={{padding:"10px 12px"}}>
+                    {e.chip ? <span className={e.chip.cls}>{e.chip.text}</span> :
+                     e.comment ? <span className="chip chip--draft" style={{fontSize:10}}>comment</span> :
+                     e.attach  ? <span className="chip chip--wip"   style={{fontSize:10}}>asset</span> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </main>
     </div>
   );

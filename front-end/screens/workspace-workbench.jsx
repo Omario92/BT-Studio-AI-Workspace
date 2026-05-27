@@ -293,7 +293,7 @@ function ProjectAssetPickerModal({
             <h3>{title}</h3>
             <p>Select an image asset from an existing project.</p>
           </div>
-          <button className="icon-btn icon-btn--light" onClick={onClose}>×</button>
+          <button className="icon-btn icon-btn--light source-picker__close" onClick={onClose}>×</button>
         </div>
 
         <div className="source-picker__toolbar">
