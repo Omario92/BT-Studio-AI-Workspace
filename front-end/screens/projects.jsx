@@ -1958,7 +1958,13 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 height: 14,
               }}
             />
-            <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
+            {(() => {
+              const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
+              if (thumbSrc) return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />;
+              if ((a.mimeType?.startsWith('video/') || a.name?.match(/\.(mp4|mov|webm)$/i)) && a.fileUrl)
+                return <video src={resolveFileUrl(a.fileUrl)} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline preload="metadata" />;
+              return <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />;
+            })()}
             <span className="badge-mini">v{a.currentVersion ?? a.v ?? 1}</span>
           </div>
         ))}
@@ -1986,7 +1992,13 @@ function AssetCompare({ assets, onSelect, selectedAssetIds, onToggleSelect }) {
                 height: 14,
               }}
             />
-            <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />
+            {(() => {
+              const thumbSrc = a.localThumbnailUrl || a.thumbnailUrl || a.metadata?.thumbnailUrl || a.metadata?.thumbnailSignedUrl || "";
+              if (thumbSrc) return <img src={resolveFileUrl(thumbSrc)} alt={a.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />;
+              if ((a.mimeType?.startsWith('video/') || a.name?.match(/\.(mp4|mov|webm)$/i)) && a.fileUrl)
+                return <video src={resolveFileUrl(a.fileUrl)} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline preload="metadata" />;
+              return <Placeholder tone={toneSet[i % toneSet.length]} label="" style={{height:"100%", borderRadius: 0}} />;
+            })()}
             <span className="badge-mini">v{a.currentVersion ?? a.v ?? 1}</span>
           </div>
         ))}
