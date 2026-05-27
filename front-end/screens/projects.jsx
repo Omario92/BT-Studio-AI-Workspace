@@ -146,6 +146,7 @@ function ProjectMgmt({ searchQuery = "" }) {
   // Create menu and new project states
   const [createMenuOpen, setCreateMenuOpen] = React.useState(false);
   const createMenuRef = React.useRef(null);
+  const [menuPos, setMenuPos] = React.useState(null);
 
   const [projectModalOpen, setProjectModalOpen] = React.useState(false);
   const [newProjectName, setNewProjectName] = React.useState('');
@@ -185,9 +186,13 @@ function ProjectMgmt({ searchQuery = "" }) {
 
   React.useEffect(() => {
     const clickOutside = (e) => {
-      if (createMenuRef.current && !createMenuRef.current.contains(e.target)) {
-        setCreateMenuOpen(false);
+      if (createMenuRef.current && createMenuRef.current.contains(e.target)) {
+        return;
       }
+      if (e.target.closest && e.target.closest('.tree-create-menu__popover')) {
+        return;
+      }
+      setCreateMenuOpen(false);
     };
     document.addEventListener('mousedown', clickOutside);
     return () => document.removeEventListener('mousedown', clickOutside);
@@ -199,6 +204,8 @@ function ProjectMgmt({ searchQuery = "" }) {
 
   const handleOpenCreateMenu = (e) => {
     e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
     setCreateMenuOpen(v => !v);
   };
 
@@ -1088,8 +1095,11 @@ function ProjectMgmt({ searchQuery = "" }) {
               {I.plus}
             </button>
 
-            {createMenuOpen && (
-              <div className="tree-create-menu__popover">
+            {createMenuOpen && menuPos && ReactDOM.createPortal(
+              <div
+                className="tree-create-menu__popover tree-create-menu__popover--fixed"
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+              >
                 <button
                   type="button"
                   className="tree-create-menu__item"
@@ -1115,7 +1125,8 @@ function ProjectMgmt({ searchQuery = "" }) {
                     <small>Add folder to current project</small>
                   </span>
                 </button>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
           <button
@@ -1469,16 +1480,16 @@ function ProjectMgmt({ searchQuery = "" }) {
           onClick={() => setFolderModalOpen(false)}>
           <div
             style={{
-              background: '#FFFFFF',
+              background: 'var(--bg-card)',
               border: '1px solid var(--line)',
               borderRadius: 12,
               padding: '24px 24px 20px',
               width: 380,
               display: 'flex', flexDirection: 'column', gap: 14,
-              boxShadow: '0 20px 50px rgba(13,15,18,0.20), 0 2px 6px rgba(13,15,18,0.06)',
+              boxShadow: 'var(--sh-lg)',
             }}
             onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New Folder</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>New Folder</h3>
             <input
               autoFocus
               type="text"
@@ -2004,10 +2015,11 @@ function AssetReviewModal({
       onClick={onClose}>
       <div
         style={{
-          background: '#FFFFFF', border: '1px solid var(--line)',
+          background: 'var(--bg-card)', border: '1px solid var(--line)',
           borderRadius: 14, width: '100%', maxWidth: 1180, maxHeight: '92vh',
           display: 'grid', gridTemplateColumns: '1fr 360px',
-          overflow: 'hidden', boxShadow: '0 20px 60px rgba(13,15,18,0.30)',
+          overflow: 'hidden', boxShadow: 'var(--sh-lg)',
+          color: 'var(--ink)',
         }}
         onClick={(e) => e.stopPropagation()}>
 
