@@ -532,7 +532,16 @@ function ProjectMgmt({ searchQuery = "" }) {
   }
 
   const handleUseWithAI = async (toolId, jobType) => {
-    if (selectedAssetIds.size === 0) return;
+    // If no assets are selected, open workspace with current project context only
+    if (selectedAssetIds.size === 0) {
+      localStorage.setItem("bt_tool", toolId || "upscaler");
+      localStorage.setItem("bt_screen", "workspace");
+      if (currentProject?.id) {
+        localStorage.setItem("bt_active_proj", currentProject.id);
+      }
+      window.location.reload();
+      return;
+    }
     setBulkActionBusy(true);
     setBulkActionError(null);
     try {
