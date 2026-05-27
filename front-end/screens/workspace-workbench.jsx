@@ -414,6 +414,7 @@ function UpscalerWorkbench({ tool, onBack }) {
   const [isComparing, setIsComparing] = React.useState(false);
 
   const compareRef = React.useRef(null);
+  const [imgNaturalSize, setImgNaturalSize] = React.useState(null); // { w, h }
 
   const clampPercent = (value) => {
     return Math.max(0, Math.min(100, value));
@@ -612,6 +613,7 @@ function UpscalerWorkbench({ tool, onBack }) {
     setProgress(0);
     setComparePct(50);
     setPreviewMode("compare");
+    setImgNaturalSize(null);
   };
 
   const isGenerating = currentJob && (currentJob.status === "QUEUED" || currentJob.status === "RUNNING");
@@ -854,6 +856,13 @@ function UpscalerWorkbench({ tool, onBack }) {
             <div
               ref={compareRef}
               className={`compare compare--${previewMode}`}
+              style={imgNaturalSize ? {
+                aspectRatio: `${imgNaturalSize.w} / ${imgNaturalSize.h}`,
+                maxWidth: "100%",
+                maxHeight: "100%",
+                width: "auto",
+                height: "auto",
+              } : {}}
               onPointerDown={previewMode === "compare" ? handleComparePointerDown : undefined}
               onPointerMove={previewMode === "compare" ? handleComparePointerMove : undefined}
               onPointerUp={previewMode === "compare" ? handleComparePointerUp : undefined}
@@ -861,7 +870,17 @@ function UpscalerWorkbench({ tool, onBack }) {
             >
               <div className="compare__layer compare__layer--before">
                 {(getSourcePreviewUrl(sourceAsset) && !sourcePreviewError) ? (
-                  <img src={getSourcePreviewUrl(sourceAsset)} alt={sourceAsset.name || "Source Asset"} style={{width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", userSelect: "none"}} draggable={false} onError={() => setSourcePreviewError(true)} />
+                  <img
+                    src={getSourcePreviewUrl(sourceAsset)}
+                    alt={sourceAsset.name || "Source Asset"}
+                    style={{width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", userSelect: "none"}}
+                    draggable={false}
+                    onLoad={(e) => {
+                      const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                      if (w && h) setImgNaturalSize({ w, h });
+                    }}
+                    onError={() => { setSourcePreviewError(true); setImgNaturalSize(null); }}
+                  />
                 ) : (
                   <Placeholder tone="violet" label={sourceAsset ? "NO PREVIEW" : ""} />
                 )}
